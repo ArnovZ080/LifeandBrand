@@ -3,14 +3,16 @@ import Dashboard from "./pages/Dashboard";
 import Suppliers from "./pages/Suppliers";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import Deliveries from "./pages/Deliveries";
-import StockTakes from "./pages/StockTakes";
+import SpotChecks from "./pages/SpotChecks";
+import InvoiceOCR from "./pages/InvoiceOCR";
 
 const navItems = [
   { to: "/", label: "Dashboard", end: true },
+  { to: "/spot-checks", label: "Spot Checks" },
   { to: "/suppliers", label: "Suppliers" },
   { to: "/purchase-orders", label: "Purchase Orders" },
   { to: "/deliveries", label: "Deliveries (GRN)" },
-  { to: "/stock-takes", label: "Stock Takes" },
+  { to: "/invoice-ocr", label: "Invoice Capture" },
 ];
 
 export default function App() {
@@ -50,10 +52,11 @@ export default function App() {
       <main style={{ flex: 1, padding: "28px 32px", overflowY: "auto" }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/spot-checks" element={<SpotChecks />} />
           <Route path="/suppliers" element={<Suppliers />} />
           <Route path="/purchase-orders" element={<PurchaseOrders />} />
           <Route path="/deliveries" element={<Deliveries />} />
-          <Route path="/stock-takes" element={<StockTakes />} />
+          <Route path="/invoice-ocr" element={<InvoiceOCR />} />
         </Routes>
       </main>
     </div>

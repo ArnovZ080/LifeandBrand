@@ -1,3 +1,5 @@
+export type Department = "bar" | "kitchen" | "floor" | "general";
+
 export interface Supplier {
   id: number;
   name: string;
@@ -14,6 +16,7 @@ export interface Item {
   code: string;
   name: string;
   category: string;
+  department: Department;
   pack_size: number;
   reorder_level: number | null;
   is_active: boolean;
@@ -48,24 +51,56 @@ export interface Delivery {
   received_by: string | null;
 }
 
-export interface StockTake {
+export interface SpotCheckItem {
   id: number;
-  location_id: number;
-  take_date: string;
-  is_finalised: boolean;
-  created_by: string | null;
-}
-
-export interface VarianceItem {
   item_id: number;
   item_code: string;
   item_name: string;
-  opening_stock: number;
-  stock_in: number;
-  theoretical_usage: number;
-  theoretical_closing: number;
-  actual_closing: number;
-  variance_quantity: number;
-  unit_cost: number;
-  variance_value: number;
+  item_category: string;
+  department: Department;
+  unit_abbreviation: string;
+  theoretical_quantity: number | null;
+  actual_quantity: number | null;
+  counted_by: string | null;
+  counted_at: string | null;
+  variance_quantity: number | null;
+  variance_value: number | null;
+  variance_pct: number | null;
+  days_since_last_check: number | null;
+  notes: string | null;
+}
+
+export interface SpotCheckSession {
+  id: number;
+  location_id: number;
+  department: Department;
+  session_date: string;
+  session_slot: number;
+  status: "pending" | "partial" | "complete" | "missed";
+  assigned_to: string | null;
+  notified_at: string | null;
+  completed_at: string | null;
+  items: SpotCheckItem[];
+}
+
+export interface ExtractedInvoiceLine {
+  description: string;
+  quantity: number;
+  unit: string | null;
+  unit_price: number;
+  line_total: number;
+}
+
+export interface InvoiceExtraction {
+  supplier_name: string | null;
+  invoice_number: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  subtotal: number | null;
+  tax_amount: number | null;
+  total_amount: number | null;
+  currency: string;
+  lines: ExtractedInvoiceLine[];
+  confidence: "high" | "medium" | "low";
+  extraction_notes: string | null;
 }
