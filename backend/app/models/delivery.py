@@ -6,10 +6,10 @@ import enum
 
 
 class DeliveryStatus(str, enum.Enum):
-    PENDING = "pending"         # booked in, not yet verified
-    VERIFIED = "verified"       # stock count confirmed against delivery note
-    DISCREPANCY = "discrepancy" # quantity or item mismatch flagged
-    ACCEPTED = "accepted"       # posted to stock
+    PENDING = "pending"
+    VERIFIED = "verified"
+    DISCREPANCY = "discrepancy"
+    ACCEPTED = "accepted"
 
 
 class Delivery(Base):
@@ -43,11 +43,17 @@ class DeliveryLine(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
     po_line_id: Mapped[int] = mapped_column(ForeignKey("purchase_order_lines.id"), nullable=True)
     quantity_delivered: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False)
-    quantity_accepted: Mapped[float] = mapped_column(Numeric(10, 4), nullable=True)  # may differ if damaged
+    quantity_accepted: Mapped[float] = mapped_column(Numeric(10, 4), nullable=True)
     unit_price: Mapped[float] = mapped_column(Numeric(10, 4), nullable=True)
     has_discrepancy: Mapped[bool] = mapped_column(Boolean, default=False)
     discrepancy_notes: Mapped[str] = mapped_column(Text, nullable=True)
 
+    # Perishable tracking — captured at the point of receiving
+    best_before_date: Mapped[date] = mapped_column(Date, nullable=True)
+    batch_reference: Mapped[str] = mapped_column(String(100), nullable=True)
+
     delivery: Mapped["Delivery"] = relationship(back_populates="lines")
     item: Mapped["Item"] = relationship()
     po_line: Mapped["PurchaseOrderLine"] = relationship()
+    # One batch created per accepted perishable delivery line
+    batch: Mapped["ItemBatch"] = relationship(back_populates="delivery_line", uselist=False)
