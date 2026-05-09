@@ -5,10 +5,12 @@ import PurchaseOrders from "./pages/PurchaseOrders";
 import Deliveries from "./pages/Deliveries";
 import SpotChecks from "./pages/SpotChecks";
 import InvoiceOCR from "./pages/InvoiceOCR";
+import Alerts from "./pages/Alerts";
 
 const navItems = [
   { to: "/", label: "Dashboard", end: true },
   { to: "/spot-checks", label: "Spot Checks" },
+  { to: "/alerts", label: "Freshness Alerts" },
   { to: "/suppliers", label: "Suppliers" },
   { to: "/purchase-orders", label: "Purchase Orders" },
   { to: "/deliveries", label: "Deliveries (GRN)" },
@@ -53,6 +55,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/spot-checks" element={<SpotChecks />} />
+          <Route path="/alerts" element={<Alerts />} />
           <Route path="/suppliers" element={<Suppliers />} />
           <Route path="/purchase-orders" element={<PurchaseOrders />} />
           <Route path="/deliveries" element={<Deliveries />} />

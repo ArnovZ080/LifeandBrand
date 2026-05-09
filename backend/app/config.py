@@ -4,11 +4,30 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     database_url: str = "postgresql://stockuser:stockpass@localhost:5432/stockdb"
     secret_key: str = "change-me-in-production"
+
+    # Claude API (invoice OCR)
+    anthropic_api_key: str = ""
+
+    # Micros POS
     micros_api_url: str = ""
     micros_api_key: str = ""
+
+    # Sage
     sage_api_url: str = ""
     sage_client_id: str = ""
     sage_client_secret: str = ""
+
+    # Email (SMTP) — compatible with Office 365 and Gmail
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_address: str = ""  # defaults to smtp_user if blank
+
+    # WhatsApp via Twilio
+    twilio_account_sid: str = ""
+    twilio_auth_token: str = ""
+    twilio_whatsapp_from: str = ""  # E.164: +14155238886 (Twilio sandbox) or your approved number
 
     class Config:
         env_file = ".env"

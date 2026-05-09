@@ -9,6 +9,8 @@ from app.models.invoice import Invoice, InvoiceLine
 from app.models.stock import StockMovement
 from app.models.sale import Sale, SaleLine
 from app.models.spot_check import SpotCheckSession, SpotCheckItem, SpotCheckBatchCount
+from app.models.contact import LocationContact, NotificationChannel
+from app.models.alert import ExpiryAlert, AlertLevel, AlertStatus
 
 __all__ = [
     "Location",
@@ -22,4 +24,6 @@ __all__ = [
     "StockMovement",
     "Sale", "SaleLine",
     "SpotCheckSession", "SpotCheckItem", "SpotCheckBatchCount",
+    "LocationContact", "NotificationChannel",
+    "ExpiryAlert", "AlertLevel", "AlertStatus",
 ]

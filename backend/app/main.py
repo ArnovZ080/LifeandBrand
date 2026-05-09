@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import suppliers, purchase_orders, deliveries, spot_checks, invoice_ocr, batches
+from app.api.routes import suppliers, purchase_orders, deliveries, spot_checks, invoice_ocr, batches, alerts
 
 app = FastAPI(
     title="Life & Brand Stock Control",
     description="Smart spot-check stock control, procurement, freshness tracking and CoS reporting",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 app.add_middleware(
@@ -23,6 +23,7 @@ app.include_router(deliveries.router, prefix="/api/v1")
 app.include_router(spot_checks.router, prefix="/api/v1")
 app.include_router(invoice_ocr.router, prefix="/api/v1")
 app.include_router(batches.router, prefix="/api/v1")
+app.include_router(alerts.router, prefix="/api/v1")
 
 
 @app.get("/health")
