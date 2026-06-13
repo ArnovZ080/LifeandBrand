@@ -11,6 +11,9 @@ from app.models.sale import Sale, SaleLine
 from app.models.spot_check import SpotCheckSession, SpotCheckItem, SpotCheckBatchCount
 from app.models.contact import LocationContact, NotificationChannel
 from app.models.alert import ExpiryAlert, AlertLevel, AlertStatus
+from app.models.am_checklist import AMChecklistTask, AMChecklistEntry, ChecklistFrequency
+from app.models.ops_visit import OpsVisitReport
+from app.models.one_on_one import OneOnOneMeeting
 
 __all__ = [
     "Location",
@@ -26,4 +29,7 @@ __all__ = [
     "SpotCheckSession", "SpotCheckItem", "SpotCheckBatchCount",
     "LocationContact", "NotificationChannel",
     "ExpiryAlert", "AlertLevel", "AlertStatus",
+    "AMChecklistTask", "AMChecklistEntry", "ChecklistFrequency",
+    "OpsVisitReport",
+    "OneOnOneMeeting",
 ]
