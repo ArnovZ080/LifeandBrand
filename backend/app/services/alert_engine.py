@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.models.batch import ItemBatch, BatchStatus
 from app.models.contact import LocationContact, NotificationChannel
 from app.models.alert import ExpiryAlert, AlertLevel, AlertStatus
+from app.models.operational_alert import OpsAlert, OpsAlertState, OpsSeverity
 from app.services.notifications import build_message, send_email, send_teams, send_whatsapp
 
 # Alert fires when hours_until_expiry <= threshold
@@ -170,5 +171,52 @@ def run_alert_check(db: Session, location_id: int | None = None) -> list[AlertRe
                     batch_reference=batch.batch_reference or "",
                 ))
 
+    # Phase 1 shadow mode: publish generalised OpsAlert rows alongside ExpiryAlerts.
+    # The ops_alert_types table must be seeded before this runs.
+    _publish_ops_alerts(db, batches)
+
     db.commit()
     return results
+
+
+def _publish_ops_alerts(db: Session, batches: list[ItemBatch]) -> None:
+    """
+    Write OpsAlert rows for each expiry event so the new alerting layer
+    can observe them in parallel with the existing ExpiryAlert system.
+    Skips quietly if the freshness_expiry alert type hasn't been seeded yet.
+    """
+    from app.models.operational_alert import OpsAlertType
+    alert_type = db.query(OpsAlertType).filter(OpsAlertType.key == "freshness_expiry").first()
+    if not alert_type:
+        return
+
+    today_str = str(__import__("datetime").date.today())
+    for batch in batches:
+        hours_left = _hours_until_expiry(batch.best_before_date)
+        level = _applicable_level(hours_left)
+        if level is None:
+            continue
+
+        severity = OpsSeverity.CRITICAL if level == AlertLevel.URGENT else (
+            OpsSeverity.HIGH if level == AlertLevel.ACTION else OpsSeverity.MEDIUM
+        )
+        ref = f"expiry_alert:batch:{batch.id}:{today_str}"
+
+        existing = db.query(OpsAlert).filter(OpsAlert.source_event_ref == ref).first()
+        if existing:
+            continue
+
+        db.add(OpsAlert(
+            alert_type_id=alert_type.id,
+            org_unit_id=batch.location_id,
+            severity=severity,
+            state=OpsAlertState.OPEN,
+            visible_tiers="site",
+            source_event_ref=ref,
+            title=f"Expiry: {batch.item.name} — {hours_left}h remaining",
+            detail=(
+                f"Batch {batch.batch_reference or batch.id}: "
+                f"{float(batch.quantity_remaining)} {batch.item.unit_of_measure.abbreviation} "
+                f"best before {batch.best_before_date}"
+            ),
+        ))

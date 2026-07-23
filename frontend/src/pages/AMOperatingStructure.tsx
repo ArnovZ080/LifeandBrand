@@ -1,9 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import api from "../hooks/useApi";
+import { useAuth } from "../contexts/AuthContext";
 
-const LOCATION_ID = 1;
-const AM_NAME = "Area Manager"; // TODO: replace with auth context
+const AM_NAME_FALLBACK = "Area Manager";
 
 type Frequency = "daily" | "weekly" | "monthly" | "adhoc";
 
@@ -24,10 +24,11 @@ const FREQ_CONFIG: Record<Frequency, { label: string; color: string; periodLabel
 };
 
 export default function AMOperatingStructure() {
+  const { orgUnitId: LOCATION_ID, user } = useAuth();
   const qc = useQueryClient();
   const [activeTab, setActiveTab] = useState<Frequency>("daily");
   const [completingTask, setCompletingTask] = useState<Task | null>(null);
-  const [completedBy, setCompletedBy] = useState(AM_NAME);
+  const [completedBy, setCompletedBy] = useState(user?.name || AM_NAME_FALLBACK);
   const [completionNotes, setCompletionNotes] = useState("");
   const [validatingEntry, setValidatingEntry] = useState<Entry | null>(null);
   const [validatedBy, setValidatedBy] = useState("");

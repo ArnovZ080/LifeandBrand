@@ -2,12 +2,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import api from "../hooks/useApi";
 import type { SpotCheckSession, SpotCheckItem, SpotCheckBatchCount, Department, ItemBatch } from "../types";
-
-const LOCATION_ID = 1;
+import { useAuth } from "../contexts/AuthContext";
 const DEPARTMENTS: Department[] = ["bar", "kitchen", "floor"];
 const DEPT_LABELS: Record<Department, string> = { bar: "Bar", kitchen: "Kitchen", floor: "Floor", general: "General" };
 
 export default function SpotChecks() {
+  const { orgUnitId: LOCATION_ID } = useAuth();
   const qc = useQueryClient();
   const [activeSession, setActiveSession] = useState<SpotCheckSession | null>(null);
   const [countModal, setCountModal] = useState<{ item: SpotCheckItem; batch?: SpotCheckBatchCount } | null>(null);

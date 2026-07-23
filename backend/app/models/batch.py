@@ -34,7 +34,7 @@ class ItemBatch(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
 
     # Source — nullable so batches can also be created for opening stock manually
     delivery_line_id: Mapped[int] = mapped_column(ForeignKey("delivery_lines.id"), nullable=True)
@@ -55,7 +55,7 @@ class ItemBatch(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     item: Mapped["Item"] = relationship(back_populates="batches")
-    location: Mapped["Location"] = relationship()
+    location: Mapped["OrgUnit"] = relationship()
     delivery_line: Mapped["DeliveryLine"] = relationship(back_populates="batch")
     spot_check_batch_counts: Mapped[list["SpotCheckBatchCount"]] = relationship(back_populates="batch")
 

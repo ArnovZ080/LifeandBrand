@@ -4,6 +4,8 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     database_url: str = "postgresql://stockuser:stockpass@localhost:5432/stockdb"
     secret_key: str = "change-me-in-production"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 480  # 8 hours
 
     # Claude API (invoice OCR)
     anthropic_api_key: str = ""

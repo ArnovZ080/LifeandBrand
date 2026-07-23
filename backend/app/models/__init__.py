@@ -1,4 +1,6 @@
-from app.models.location import Location
+from app.models.location import OrgUnit, OrgTier, Location  # Location alias for compat
+from app.models.brand import Brand
+from app.models.user import User, UserRole
 from app.models.supplier import Supplier, SupplierItem
 from app.models.item import Item, UnitOfMeasure, Department
 from app.models.recipe import MenuItem, RecipeLine
@@ -14,9 +16,15 @@ from app.models.alert import ExpiryAlert, AlertLevel, AlertStatus
 from app.models.am_checklist import AMChecklistTask, AMChecklistEntry, ChecklistFrequency
 from app.models.ops_visit import OpsVisitReport
 from app.models.one_on_one import OneOnOneMeeting
+from app.models.operational_alert import (
+    OpsAlertType, ThresholdConfig, OpsAlert, EscalationEvent,
+    OpsSeverity, OpsAlertState, ThresholdDirection, EscalationAction,
+)
 
 __all__ = [
-    "Location",
+    "OrgUnit", "OrgTier", "Location",
+    "Brand",
+    "User", "UserRole",
     "Supplier", "SupplierItem",
     "Item", "UnitOfMeasure", "Department",
     "MenuItem", "RecipeLine",
@@ -32,4 +40,6 @@ __all__ = [
     "AMChecklistTask", "AMChecklistEntry", "ChecklistFrequency",
     "OpsVisitReport",
     "OneOnOneMeeting",
+    "OpsAlertType", "ThresholdConfig", "OpsAlert", "EscalationEvent",
+    "OpsSeverity", "OpsAlertState", "ThresholdDirection", "EscalationAction",
 ]

@@ -19,7 +19,7 @@ class PurchaseOrder(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     po_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     supplier_id: Mapped[int] = mapped_column(ForeignKey("suppliers.id"), nullable=False)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
     status: Mapped[POStatus] = mapped_column(Enum(POStatus), default=POStatus.DRAFT)
     order_date: Mapped[date] = mapped_column(Date, nullable=False)
     expected_delivery_date: Mapped[date] = mapped_column(Date, nullable=True)
@@ -29,7 +29,7 @@ class PurchaseOrder(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     supplier: Mapped["Supplier"] = relationship(back_populates="purchase_orders")
-    location: Mapped["Location"] = relationship(back_populates="purchase_orders")
+    location: Mapped["OrgUnit"] = relationship(back_populates="purchase_orders")
     lines: Mapped[list["PurchaseOrderLine"]] = relationship(back_populates="purchase_order", cascade="all, delete-orphan")
     deliveries: Mapped[list["Delivery"]] = relationship(back_populates="purchase_order")
 

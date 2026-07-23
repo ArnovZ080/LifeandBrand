@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import api from "../hooks/useApi";
-
-const LOCATION_ID = 1;
+import { useAuth } from "../contexts/AuthContext";
 
 interface VisitSummary {
   id: number;
@@ -88,11 +87,11 @@ function emptySectionItems(keys: string[]): Record<string, SectionItem> {
   return Object.fromEntries(keys.map(k => [k, { notes: "", due_date: "", person: "" }]));
 }
 
-function emptyPayload(): VisitPayload {
+function emptyPayload(locationId = 1): VisitPayload {
   const today = new Date().toISOString().slice(0, 10);
   const now = new Date().toTimeString().slice(0, 5);
   return {
-    location_id: LOCATION_ID,
+    location_id: locationId,
     visit_date: today,
     visit_time: now,
     visit_done_by: "",
@@ -112,9 +111,10 @@ function emptyPayload(): VisitPayload {
 }
 
 export default function OpsVisitReport() {
+  const { orgUnitId: LOCATION_ID } = useAuth();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<VisitPayload>(emptyPayload);
+  const [form, setForm] = useState<VisitPayload>(() => emptyPayload(LOCATION_ID));
   const [viewingId, setViewingId] = useState<number | null>(null);
 
   const { data: visits = [], isLoading } = useQuery<VisitSummary[]>({
@@ -133,7 +133,7 @@ export default function OpsVisitReport() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["ops-visits"] });
       setShowForm(false);
-      setForm(emptyPayload());
+      setForm(emptyPayload(LOCATION_ID));
     },
   });
 
@@ -268,7 +268,7 @@ export default function OpsVisitReport() {
               >
                 {createMutation.isPending ? "Saving..." : "Save Visit Report"}
               </button>
-              <button className="secondary" onClick={() => { setShowForm(false); setForm(emptyPayload()); }}>
+              <button className="secondary" onClick={() => { setShowForm(false); setForm(emptyPayload(LOCATION_ID)); }}>
                 Cancel
               </button>
             </div>

@@ -9,13 +9,13 @@ class Sale(Base):
     __tablename__ = "sales"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
     sale_date: Mapped[date] = mapped_column(Date, nullable=False)
     micros_batch_id: Mapped[str] = mapped_column(String(100), nullable=True)
     total_revenue: Mapped[float] = mapped_column(Numeric(12, 4), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    location: Mapped["Location"] = relationship(back_populates="sales")
+    location: Mapped["OrgUnit"] = relationship(back_populates="sales")
     lines: Mapped[list["SaleLine"]] = relationship(back_populates="sale", cascade="all, delete-orphan")
 
 

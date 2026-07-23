@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import api from "../hooks/useApi";
-
-const LOCATION_ID = 1;
+import { useAuth } from "../contexts/AuthContext";
 
 interface Contact {
   id: number;
@@ -47,6 +46,7 @@ const defaultForm = {
 };
 
 export default function Alerts() {
+  const { orgUnitId: LOCATION_ID } = useAuth();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(defaultForm);

@@ -21,7 +21,7 @@ class LocationContact(Base):
     __tablename__ = "location_contacts"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     role: Mapped[str] = mapped_column(String(100), nullable=True)  # e.g. "Head Chef", "Floor Manager"
     # Contact details — fill in whichever channels are active
@@ -38,7 +38,7 @@ class LocationContact(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    location: Mapped["Location"] = relationship()
+    location: Mapped["OrgUnit"] = relationship()
     alerts_sent: Mapped[list["ExpiryAlert"]] = relationship(back_populates="contact")
 
     def channel_list(self) -> list[NotificationChannel]:

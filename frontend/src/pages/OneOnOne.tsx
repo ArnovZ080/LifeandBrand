@@ -1,8 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import api from "../hooks/useApi";
-
-const LOCATION_ID = 1;
+import { useAuth } from "../contexts/AuthContext";
 
 interface MeetingSummary {
   id: number;
@@ -99,6 +98,7 @@ function emptyPayload(): MeetingPayload {
 }
 
 export default function OneOnOne() {
+  const { orgUnitId: LOCATION_ID } = useAuth();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<MeetingPayload>(emptyPayload);

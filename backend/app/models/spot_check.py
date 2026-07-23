@@ -23,7 +23,7 @@ class SpotCheckSession(Base):
     __tablename__ = "spot_check_sessions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
     department: Mapped[Department] = mapped_column(Enum(Department), nullable=False)
     session_date: Mapped[date] = mapped_column(Date, nullable=False)
     session_slot: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
@@ -33,7 +33,7 @@ class SpotCheckSession(Base):
     completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    location: Mapped["Location"] = relationship()
+    location: Mapped["OrgUnit"] = relationship()
     items: Mapped[list["SpotCheckItem"]] = relationship(
         back_populates="session", cascade="all, delete-orphan"
     )

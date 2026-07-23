@@ -20,7 +20,7 @@ class StockMovement(Base):
     __tablename__ = "stock_movements"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
     movement_type: Mapped[MovementType] = mapped_column(Enum(MovementType), nullable=False)
     quantity: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False)  # positive = in, negative = out
@@ -31,5 +31,5 @@ class StockMovement(Base):
     created_by: Mapped[str] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    location: Mapped["Location"] = relationship()
+    location: Mapped["OrgUnit"] = relationship()
     item: Mapped["Item"] = relationship(back_populates="stock_movements")
