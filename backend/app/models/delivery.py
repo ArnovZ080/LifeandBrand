@@ -20,7 +20,7 @@ class Delivery(Base):
     grn_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     purchase_order_id: Mapped[int] = mapped_column(ForeignKey("purchase_orders.id"), nullable=True)
     supplier_id: Mapped[int] = mapped_column(ForeignKey("suppliers.id"), nullable=False)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
     delivery_date: Mapped[date] = mapped_column(Date, nullable=False)
     supplier_delivery_note: Mapped[str] = mapped_column(String(100), nullable=True)
     status: Mapped[DeliveryStatus] = mapped_column(Enum(DeliveryStatus), default=DeliveryStatus.PENDING)

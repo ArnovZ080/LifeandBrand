@@ -13,7 +13,7 @@ class OneOnOneMeeting(Base):
     __tablename__ = "one_on_one_meetings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
 
     # Header
     team_member_name: Mapped[str] = mapped_column(String(150), nullable=False)

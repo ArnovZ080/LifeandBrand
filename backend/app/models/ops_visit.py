@@ -18,7 +18,7 @@ class OpsVisitReport(Base):
     __tablename__ = "ops_visit_reports"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
 
     # Header
     visit_date: Mapped[date] = mapped_column(Date, nullable=False)

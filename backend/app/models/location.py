@@ -31,6 +31,7 @@ class OrgUnit(Base):
     code: Mapped[str] = mapped_column(String(20), unique=True, nullable=True)
     tier: Mapped[OrgTier] = mapped_column(Enum(OrgTier), nullable=False, default=OrgTier.SITE)
     parent_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id"), nullable=True)
     brand_id: Mapped[int] = mapped_column(ForeignKey("brands.id"), nullable=True)
     pos_site_code: Mapped[str] = mapped_column(String(50), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -47,3 +48,7 @@ class OrgUnit(Base):
 
 # Alias so any code that still imports `Location` doesn't immediately break
 Location = OrgUnit
+# Register the alias in the declarative class registry so relationship
+# annotations like Mapped["Location"] (delivery, am_checklist, ops_visit,
+# one_on_one) resolve to OrgUnit during mapper configuration.
+Base.registry._class_registry["Location"] = OrgUnit

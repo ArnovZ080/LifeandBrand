@@ -1,5 +1,5 @@
-from datetime import datetime
-from sqlalchemy import String, DateTime, Boolean, Numeric, ForeignKey, Text
+from datetime import datetime, date
+from sqlalchemy import String, DateTime, Date, Boolean, Numeric, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.database import Base
 
@@ -29,6 +29,9 @@ class RecipeLine(Base):
     item_id: Mapped[int] = mapped_column(ForeignKey("items.id"), nullable=False)
     quantity_used: Mapped[float] = mapped_column(Numeric(10, 6), nullable=False)  # in item's UoM
     notes: Mapped[str] = mapped_column(Text, nullable=True)
+    # Recipe versioning: the date range over which this line applies (null = always)
+    valid_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    valid_to: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     menu_item: Mapped["MenuItem"] = relationship(back_populates="recipe_lines")
     item: Mapped["Item"] = relationship(back_populates="recipe_lines")

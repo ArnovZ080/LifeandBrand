@@ -41,7 +41,7 @@ class AMChecklistEntry(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     task_id: Mapped[int] = mapped_column(ForeignKey("am_checklist_tasks.id"), nullable=False)
-    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), nullable=False)
+    location_id: Mapped[int] = mapped_column(ForeignKey("org_units.id"), nullable=False)
     period_date: Mapped[date] = mapped_column(Date, nullable=False)
 
     # AM completion
