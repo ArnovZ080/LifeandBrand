@@ -7,17 +7,22 @@ from app.api.routes import (
     spot_checks, invoice_ocr, batches, alerts,
     am_checklist, ops_visit, one_on_one,
     auth, org_units, operational_alerts,
+    ingest, daily_pulse, cos,
 )
 from app.db.database import SessionLocal
 from app.services.am_tasks import seed_tasks
+from app.services.seed_org import seed_org
+from app.services.ledger_service import ensure_metric
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Seed AM checklist tasks on startup (idempotent)
+    # Seed AM checklist tasks, org structure and ledger metrics on startup (idempotent)
     db = SessionLocal()
     try:
         seed_tasks(db)
+        seed_org(db)
+        ensure_metric(db, "net_sales", "Net sales (L2)", tolerance_pct=0.5, required_green_periods=14)
     finally:
         db.close()
     yield
@@ -58,6 +63,11 @@ app.include_router(one_on_one.router, prefix="/api/v1")
 
 # Operational alerts (Phase 1)
 app.include_router(operational_alerts.router, prefix="/api/v1")
+
+# Ingest pipeline + Daily Pulse (Phase 1) and COS engine (Phase 2)
+app.include_router(ingest.router, prefix="/api/v1")
+app.include_router(daily_pulse.router, prefix="/api/v1")
+app.include_router(cos.router, prefix="/api/v1")
 
 
 @app.get("/health")

@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     micros_api_url: str = ""
     micros_api_key: str = ""
 
+    # Ingest pipeline
+    ingest_watch_dir: str = "/data/ingest/micros"
+
+    # COS variance flagging — absolute variance value (currency) above which a
+    # CosFlag row is raised for an item in a period
+    cos_flag_threshold_value: float = 200.0
+
     # Sage
     sage_api_url: str = ""
     sage_client_id: str = ""
