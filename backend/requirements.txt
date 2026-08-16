@@ -13,3 +13,5 @@ pytest==8.3.3
 pytest-asyncio==0.24.0
 passlib[bcrypt]==1.7.4
 python-jose[cryptography]==3.3.0
+openpyxl==3.1.5
+pyxlsb==1.0.10
