@@ -77,9 +77,9 @@ const QUESTIONS: { key: keyof MeetingPayload; label: string; prompt: string }[] 
   },
 ];
 
-function emptyPayload(): MeetingPayload {
+function emptyPayload(locationId = 1): MeetingPayload {
   return {
-    location_id: LOCATION_ID,
+    location_id: locationId,
     team_member_name: "",
     area_manager_name: "",
     meeting_date: new Date().toISOString().slice(0, 10),
@@ -101,7 +101,7 @@ export default function OneOnOne() {
   const { orgUnitId: LOCATION_ID } = useAuth();
   const qc = useQueryClient();
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<MeetingPayload>(emptyPayload);
+  const [form, setForm] = useState<MeetingPayload>(() => emptyPayload(LOCATION_ID));
   const [viewingId, setViewingId] = useState<number | null>(null);
 
   const { data: meetings = [], isLoading } = useQuery<MeetingSummary[]>({
@@ -120,7 +120,7 @@ export default function OneOnOne() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["one-on-ones"] });
       setShowForm(false);
-      setForm(emptyPayload());
+      setForm(emptyPayload(LOCATION_ID));
     },
   });
 
@@ -238,7 +238,7 @@ export default function OneOnOne() {
               >
                 {createMutation.isPending ? "Saving..." : "Save Meeting Record"}
               </button>
-              <button className="secondary" onClick={() => { setShowForm(false); setForm(emptyPayload()); }}>
+              <button className="secondary" onClick={() => { setShowForm(false); setForm(emptyPayload(LOCATION_ID)); }}>
                 Cancel
               </button>
             </div>
