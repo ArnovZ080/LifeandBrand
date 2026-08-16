@@ -44,7 +44,7 @@ def run_pipeline(db: Session, adapter: SourceAdapter, watch_dir: str) -> list[Pi
     for path in adapter.discover(watch_dir):
         ingest: RawIngest | None = None
         try:
-            # ── Stage 1: Land ─────────────────────────────────────────────────────
+            # ── Stage 1: Land ─────────────────────────────────────────────────
             file_hash = sha256_file(path)
             if db.execute(select(RawIngest.id).where(RawIngest.file_hash == file_hash)).first():
                 results.append(PipelineResult(
@@ -64,7 +64,7 @@ def run_pipeline(db: Session, adapter: SourceAdapter, watch_dir: str) -> list[Pi
             db.commit()
             db.refresh(ingest)
 
-            # ── Stage 2: Stage (structural validation) ────────────────────────────────
+            # ── Stage 2: Stage (structural validation) ────────────────────────
             rows = payload.get("rows")
             if not isinstance(rows, list) or not rows:
                 raise ValueError("Payload has no data rows")
@@ -73,7 +73,7 @@ def run_pipeline(db: Session, adapter: SourceAdapter, watch_dir: str) -> list[Pi
             ingest.stage = IngestStage.STAGED
             db.commit()
 
-            # ── Stage 3: Normalise ──────────────────────────────────────────────────
+            # ── Stage 3: Normalise ────────────────────────────────────────────
             normalised = adapter.normalise(payload)
             if not normalised:
                 raise ValueError(
@@ -104,7 +104,7 @@ def run_pipeline(db: Session, adapter: SourceAdapter, watch_dir: str) -> list[Pi
             ingest.stage = IngestStage.NORMALISED
             db.commit()
 
-            # ── Stage 4: Reconcile ──────────────────────────────────────────────────
+            # ── Stage 4: Reconcile ────────────────────────────────────────────
             errors = _reconcile_checks(normalised)
             if errors:
                 raise ValueError("Reconcile failed: " + "; ".join(errors))
@@ -115,7 +115,7 @@ def run_pipeline(db: Session, adapter: SourceAdapter, watch_dir: str) -> list[Pi
             ingest.stage = IngestStage.RECONCILED
             db.commit()
 
-            # ── Stage 5: Serve ──────────────────────────────────────────────────────
+            # ── Stage 5: Serve ────────────────────────────────────────────────
             ingest.stage = IngestStage.SERVED
             db.commit()
 

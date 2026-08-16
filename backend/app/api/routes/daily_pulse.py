@@ -72,7 +72,7 @@ def daily_pulse(
 
     mtd = net_sales(db, org_unit_id, month_start, today, level="L2")
 
-    # ── comparators ─────────────────────────────────────────────────────────────
+    # ── comparators ───────────────────────────────────────────────────────────
     ly_from, ly_to = _clamped_window(today.year - 1, today.month, elapsed_days)
     last_year = net_sales(db, org_unit_id, ly_from, ly_to, level="L2")
 

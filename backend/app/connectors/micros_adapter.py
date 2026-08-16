@@ -110,7 +110,7 @@ class MicrosExportAdapter(SourceAdapter):
     def source_key(self) -> str:
         return "micros"
 
-    # ── discover ────────────────────────────────────────────────────────────────
+    # ── discover ──────────────────────────────────────────────────────────────
     def discover(self, watch_dir: str) -> list[str]:
         """Return paths of supported files in watch_dir whose sha256 is not
         in ``self.known_hashes``. Missing directory → empty list."""
@@ -128,7 +128,7 @@ class MicrosExportAdapter(SourceAdapter):
             paths.append(path)
         return paths
 
-    # ── parse ───────────────────────────────────────────────────────────────────
+    # ── parse ─────────────────────────────────────────────────────────────────
     def parse(self, path: str) -> dict:
         """Read the file into {file_name, rows: [{col: value}]} with
         normalised (strip/lower/underscore) column names."""
@@ -183,7 +183,7 @@ class MicrosExportAdapter(SourceAdapter):
                     [[c.v for c in row] for row in sheet.rows()]
                 )
 
-    # ── normalise ───────────────────────────────────────────────────────────────
+    # ── normalise ─────────────────────────────────────────────────────────────
     def normalise(self, payload: dict) -> list[dict]:
         """Map raw rows to canonical dicts, one per (pos_site_code, business_date):
 
