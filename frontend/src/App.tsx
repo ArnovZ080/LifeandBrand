@@ -8,6 +8,8 @@ import SpotChecks from "./pages/SpotChecks";
 import InvoiceOCR from "./pages/InvoiceOCR";
 import Alerts from "./pages/Alerts";
 import AMOperatingStructure from "./pages/AMOperatingStructure";
+import DailyPulse from "./pages/DailyPulse";
+import COSVariance from "./pages/COSVariance";
 import OpsVisitReport from "./pages/OpsVisitReport";
 import OneOnOne from "./pages/OneOnOne";
 import Login from "./pages/Login";
@@ -15,6 +17,7 @@ import { useAuth, ROLES_WITH_MULTI_SITE } from "./contexts/AuthContext";
 import api from "./hooks/useApi";
 
 const stockNavItems = [
+  { to: "/daily-pulse", label: "Daily Pulse" },
   { to: "/", label: "Dashboard", end: true },
   { to: "/spot-checks", label: "Spot Checks" },
   { to: "/alerts", label: "Freshness Alerts" },
@@ -22,6 +25,7 @@ const stockNavItems = [
   { to: "/purchase-orders", label: "Purchase Orders" },
   { to: "/deliveries", label: "Deliveries (GRN)" },
   { to: "/invoice-ocr", label: "Invoice Capture" },
+  { to: "/cos-variance", label: "COS & Variance" },
 ];
 
 const amNavItems = [
@@ -139,6 +143,8 @@ function AppLayout() {
       <main style={{ flex: 1, padding: "28px 32px", overflowY: "auto" }}>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/daily-pulse" element={<DailyPulse />} />
+          <Route path="/cos-variance" element={<COSVariance />} />
           <Route path="/spot-checks" element={<SpotChecks />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/suppliers" element={<Suppliers />} />
