@@ -149,11 +149,11 @@ def _load_count(db: Session, count_id: int) -> StockCount:
 def create_count_template(
     payload: TemplateIn,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     try:
         template = create_template(db, name=payload.name, item_ids=payload.item_ids,
-                                   org_unit_id=payload.org_unit_id)
+                                   org_unit_id=payload.org_unit_id, actor=current_user)
     except (LookupError, ValueError) as exc:
         raise _map_service_error(exc)
     return _template_out(template)
@@ -189,6 +189,7 @@ def open_stock_count(
             template_id=payload.template_id,
             item_ids=payload.item_ids,
             created_by=current_user.email,
+            actor=current_user,
         )
     except (LookupError, ValueError) as exc:
         raise _map_service_error(exc)
@@ -236,11 +237,11 @@ def record_stock_count_lines(
     stock_count_id: int,
     lines: list[LineCountIn],
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     _load_count(db, stock_count_id)
     try:
-        count = record_counts(db, stock_count_id, [line.model_dump() for line in lines])
+        count = record_counts(db, stock_count_id, [line.model_dump() for line in lines], actor=current_user)
     except (LookupError, ValueError) as exc:
         raise _map_service_error(exc)
     return _count_out(count)
@@ -250,11 +251,11 @@ def record_stock_count_lines(
 def submit_stock_count(
     stock_count_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     _load_count(db, stock_count_id)
     try:
-        count = submit_count(db, stock_count_id)
+        count = submit_count(db, stock_count_id, actor=current_user)
     except (LookupError, ValueError) as exc:
         raise _map_service_error(exc)
     return _count_out(count)

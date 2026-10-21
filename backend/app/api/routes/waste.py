@@ -95,6 +95,7 @@ def log_waste_event(
             reason_note=payload.reason_note,
             logged_by=payload.logged_by or current_user.email,
             event_date=payload.event_date,
+            actor=current_user,
         )
     except LookupError as exc:
         raise HTTPException(404, str(exc))

@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.models.operational_alert import ThresholdConfig, ThresholdDirection
+from app.models.user import User
+from app.services import audit_service
 
 
 @dataclass
@@ -80,6 +82,7 @@ def set_threshold(
     value: float,
     direction: ThresholdDirection,
     user_id: int | None = None,
+    actor: User | None = None,
 ) -> ThresholdConfig:
     """
     Creates or updates a ThresholdConfig, enforcing the conflict rule.
@@ -119,9 +122,17 @@ def set_threshold(
         .first()
     )
     if existing:
+        before = audit_service.model_snapshot(existing)
         existing.value = value
         existing.direction = direction
         existing.set_by_user_id = user_id
+        db.flush()
+        changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(existing))
+        audit_service.record(
+            db, actor=actor, entity_type="threshold_config", entity_id=existing.id, action="update",
+            org_unit_id=org_unit_id, before=changed_before, after=changed_after,
+            summary=f"Set {kpi_type} threshold to {value} ({direction.value})",
+        )
         db.commit()
         db.refresh(existing)
         return existing
@@ -134,6 +145,12 @@ def set_threshold(
         set_by_user_id=user_id,
     )
     db.add(cfg)
+    db.flush()
+    audit_service.record(
+        db, actor=actor, entity_type="threshold_config", entity_id=cfg.id, action="create",
+        org_unit_id=org_unit_id, after=audit_service.model_snapshot(cfg),
+        summary=f"Set {kpi_type} threshold to {value} ({direction.value})",
+    )
     db.commit()
     db.refresh(cfg)
     return cfg

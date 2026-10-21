@@ -6,6 +6,7 @@ from typing import Any
 
 from app.db.database import get_db
 from app.models.ops_visit import OpsVisitReport
+from app.services import audit_service
 
 router = APIRouter(prefix="/am/ops-visits", tags=["area-manager"])
 
@@ -117,6 +118,13 @@ def create_visit(payload: OpsVisitCreate, db: Session = Depends(get_db)):
         am_signature=payload.am_signature,
     )
     db.add(report)
+    db.flush()
+    # Visit content is not copied into the audit log; the record marks who logged what, when.
+    audit_service.record(
+        db, actor=None, actor_name=payload.visit_done_by, entity_type="ops_visit_report",
+        entity_id=report.id, action="create", org_unit_id=report.location_id,
+        summary=f"Logged ops visit for {payload.visit_date.isoformat()} (content not copied)",
+    )
     db.commit()
     db.refresh(report)
     return report

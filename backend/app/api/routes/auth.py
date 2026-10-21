@@ -8,6 +8,7 @@ from app.models.user import User, UserRole
 from app.models.location import OrgUnit, OrgTier
 from app.auth.security import verify_password, hash_password, create_access_token
 from app.auth.dependencies import get_current_user
+from app.services import audit_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -71,7 +72,7 @@ def me(current_user: User = Depends(get_current_user)):
 def create_user(
     payload: UserCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(400, "Email already registered")
@@ -83,6 +84,13 @@ def create_user(
         org_unit_id=payload.org_unit_id,
     )
     db.add(user)
+    db.flush()
+    # model_snapshot leaves out hashed_password.
+    audit_service.record(
+        db, actor=current_user, entity_type="user", entity_id=user.id, action="create",
+        org_unit_id=user.org_unit_id, after=audit_service.model_snapshot(user),
+        summary=f"Created user {user.email} with role {user.role.value}",
+    )
     db.commit()
     db.refresh(user)
     return UserOut(

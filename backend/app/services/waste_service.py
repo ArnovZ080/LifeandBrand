@@ -19,7 +19,9 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_subtree_ids
 from app.models import Item, OrgUnit
 from app.models.stock import MovementType, StockMovement
+from app.models.user import User
 from app.models.waste import WasteEvent, WasteReason
+from app.services import audit_service
 
 CENT = Decimal("0.01")
 
@@ -38,11 +40,12 @@ def log_waste(
     reason_note: str | None = None,
     logged_by: str | None = None,
     event_date: date | None = None,
+    actor: User | None = None,
 ) -> WasteEvent:
     """Record a waste event and post the matching stock movement.
 
     Raises LookupError for an unknown org unit or item and ValueError for a
-    non-positive quantity.
+    non-positive quantity. The audit row is written in the same commit.
     """
     qty = _dec(quantity)
     if qty <= 0:
@@ -81,6 +84,12 @@ def log_waste(
         notes=f"waste: {reason.value}",
         created_by=logged_by,
     ))
+    audit_service.record(
+        db, actor=actor, actor_name=logged_by,
+        entity_type="waste_event", entity_id=event.id, action="create",
+        org_unit_id=org_unit_id, after=audit_service.model_snapshot(event),
+        summary=f"Logged waste: {qty} of item {item.code} ({reason.value})",
+    )
     db.commit()
     db.refresh(event)
     return event

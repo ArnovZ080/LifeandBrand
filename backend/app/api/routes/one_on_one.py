@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.db.database import get_db
 from app.models.one_on_one import OneOnOneMeeting
+from app.services import audit_service
 
 router = APIRouter(prefix="/am/one-on-ones", tags=["area-manager"])
 
@@ -76,6 +77,13 @@ def list_meetings(location_id: int, limit: int = 50, db: Session = Depends(get_d
 def create_meeting(payload: OneOnOneCreate, db: Session = Depends(get_db)):
     meeting = OneOnOneMeeting(**payload.model_dump())
     db.add(meeting)
+    db.flush()
+    # Meeting answers are HR content and are not copied into the audit log.
+    audit_service.record(
+        db, actor=None, actor_name=payload.area_manager_name, entity_type="one_on_one_meeting",
+        entity_id=meeting.id, action="create", org_unit_id=payload.location_id,
+        summary=f"Recorded one-on-one on {payload.meeting_date.isoformat()} (content not copied)",
+    )
     db.commit()
     db.refresh(meeting)
     return meeting

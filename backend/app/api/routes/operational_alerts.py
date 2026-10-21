@@ -11,6 +11,7 @@ from app.models.operational_alert import (
 )
 from app.auth.dependencies import get_current_user, get_accessible_org_unit_ids
 from app.services.escalation_engine import check_escalations
+from app.services import audit_service
 from app.services.threshold_resolver import set_threshold, get_effective_threshold, ThresholdConflict
 
 router = APIRouter(prefix="/ops-alerts", tags=["operational-alerts"])
@@ -110,13 +111,20 @@ def list_alerts(
 
 
 def _transition(alert: OpsAlert, new_state: OpsAlertState, action: EscalationAction,
-                user: User, notes: str | None, db: Session):
+                user: User, notes: str | None, db: Session, *, before: dict, audit_action: str,
+                summary: str):
     alert.state = new_state
     if new_state == OpsAlertState.ACKNOWLEDGED:
         alert.acknowledged_at = datetime.utcnow()
     elif new_state == OpsAlertState.RESOLVED:
         alert.resolved_at = datetime.utcnow()
     db.add(EscalationEvent(alert_id=alert.id, action=action, actor_user_id=user.id, notes=notes))
+    db.flush()
+    changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(alert))
+    audit_service.record(
+        db, actor=user, entity_type="ops_alert", entity_id=alert.id, action=audit_action,
+        org_unit_id=alert.org_unit_id, before=changed_before, after=changed_after, summary=summary,
+    )
     db.commit()
     db.refresh(alert)
     return _alert_out(alert)
@@ -127,7 +135,10 @@ def acknowledge(alert_id: int, current_user: User = Depends(get_current_user), d
     alert = db.get(OpsAlert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
-    return _transition(alert, OpsAlertState.ACKNOWLEDGED, EscalationAction.ACKNOWLEDGED, current_user, None, db)
+    before = audit_service.model_snapshot(alert)
+    return _transition(alert, OpsAlertState.ACKNOWLEDGED, EscalationAction.ACKNOWLEDGED, current_user, None, db,
+                       before=before, audit_action="acknowledge",
+                       summary=f"Acknowledged alert {alert.id}: {alert.title}")
 
 
 @router.post("/{alert_id}/resolve", response_model=AlertOut)
@@ -135,7 +146,10 @@ def resolve(alert_id: int, current_user: User = Depends(get_current_user), db: S
     alert = db.get(OpsAlert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
-    return _transition(alert, OpsAlertState.RESOLVED, EscalationAction.RESOLVED, current_user, None, db)
+    before = audit_service.model_snapshot(alert)
+    return _transition(alert, OpsAlertState.RESOLVED, EscalationAction.RESOLVED, current_user, None, db,
+                       before=before, audit_action="resolve",
+                       summary=f"Resolved alert {alert.id}: {alert.title}")
 
 
 @router.post("/{alert_id}/escalate", response_model=AlertOut)
@@ -144,11 +158,14 @@ def escalate(alert_id: int, current_user: User = Depends(get_current_user), db: 
     alert = db.get(OpsAlert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
+    before = audit_service.model_snapshot(alert)
     current_tiers = [t.strip() for t in alert.visible_tiers.split(",") if t.strip()]
     next_tier = _next_tier(current_tiers)
     if next_tier:
         alert.visible_tiers = _add_tier(alert.visible_tiers, next_tier)
-    return _transition(alert, OpsAlertState.ESCALATED, EscalationAction.ESCALATED_MANUAL, current_user, None, db)
+    return _transition(alert, OpsAlertState.ESCALATED, EscalationAction.ESCALATED_MANUAL, current_user, None, db,
+                       before=before, audit_action="escalate",
+                       summary=f"Escalated alert {alert.id} to tiers {alert.visible_tiers}")
 
 
 @router.post("/{alert_id}/dismiss", response_model=AlertOut)
@@ -156,8 +173,10 @@ def dismiss(alert_id: int, current_user: User = Depends(get_current_user), db: S
     alert = db.get(OpsAlert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
+    before = audit_service.model_snapshot(alert)
     return _transition(alert, OpsAlertState.RESOLVED, EscalationAction.DISMISSED_NOT_USEFUL, current_user,
-                       "Dismissed as not useful", db)
+                       "Dismissed as not useful", db, before=before, audit_action="dismiss",
+                       summary=f"Dismissed alert {alert.id} as not useful: {alert.title}")
 
 
 @router.post("/check-escalations")
@@ -215,6 +234,7 @@ def upsert_threshold(
             value=payload.value,
             direction=payload.direction,
             user_id=current_user.id,
+            actor=current_user,
         )
     except ThresholdConflict as e:
         raise HTTPException(409, str(e))

@@ -10,6 +10,7 @@ from app.db.database import get_db
 from app.models import Item
 from app.models.cos_flag import CosDismissal, CosFlag
 from app.models.user import User
+from app.services import audit_service
 from app.services.cos_service import compute_variance
 
 router = APIRouter(prefix="/cos", tags=["cos"])
@@ -97,12 +98,22 @@ def dismiss_flag(
         raise HTTPException(404, "Flag not found")
     if not payload.reason.strip():
         raise HTTPException(400, "A dismissal reason is required")
+    before = audit_service.model_snapshot(flag)
+    dismissed_by = payload.dismissed_by or getattr(current_user, "email", None)
     db.add(CosDismissal(
         flag_id=flag.id,
         reason=payload.reason.strip(),
-        dismissed_by=payload.dismissed_by or getattr(current_user, "email", None),
+        dismissed_by=dismissed_by,
     ))
     flag.status = "dismissed"
+    db.flush()
+    changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(flag))
+    audit_service.record(
+        db, actor=current_user, actor_name=dismissed_by, entity_type="cos_flag", entity_id=flag.id,
+        action="dismiss", org_unit_id=flag.org_unit_id, before=changed_before,
+        after={**changed_after, "dismissal_reason": payload.reason.strip()},
+        summary=f"Dismissed COS flag {flag.id} for {flag.period}: {payload.reason.strip()}",
+    )
     db.commit()
     db.refresh(flag)
     item = db.get(Item, flag.item_id)

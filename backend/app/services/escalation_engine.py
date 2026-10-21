@@ -13,6 +13,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.operational_alert import OpsAlert, OpsAlertState, EscalationEvent, EscalationAction
+from app.services import audit_service
 
 ESCALATION_WINDOW_HOURS = 48
 
@@ -57,6 +58,7 @@ def check_escalations(db: Session) -> list[OpsAlert]:
     )
 
     for alert in open_stale + ack_stale:
+        before = audit_service.model_snapshot(alert)
         current_tiers = [t.strip() for t in alert.visible_tiers.split(",") if t.strip()]
         next_tier = _next_tier(current_tiers)
         if next_tier:
@@ -68,6 +70,13 @@ def check_escalations(db: Session) -> list[OpsAlert]:
             actor_user_id=None,
             notes=f"Auto-escalated after {ESCALATION_WINDOW_HOURS}h without action",
         ))
+        db.flush()
+        changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(alert))
+        audit_service.record(
+            db, actor=None, actor_name="system", entity_type="ops_alert", entity_id=alert.id,
+            action="escalate", org_unit_id=alert.org_unit_id, before=changed_before, after=changed_after,
+            summary=f"Auto-escalated alert {alert.id} after {ESCALATION_WINDOW_HOURS}h without action",
+        )
         escalated.append(alert)
 
     db.commit()

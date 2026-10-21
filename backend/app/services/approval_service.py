@@ -36,6 +36,7 @@ from app.models.location import OrgUnit
 from app.models.purchase_order import POStatus, PurchaseOrder
 from app.models.requisition import Requisition, RequisitionStatus
 from app.models.user import User, UserRole
+from app.services import audit_service
 
 MIN_LEVELS = 1
 MAX_LEVELS = 5
@@ -141,6 +142,14 @@ def get_request(db: Session, subject: ApprovalSubject, subject_id: int) -> Appro
     ).scalar_one_or_none()
 
 
+def _subject_status(db: Session, request: ApprovalRequest) -> str | None:
+    if request.subject == ApprovalSubject.REQUISITION:
+        row = db.get(Requisition, request.subject_id)
+    else:
+        row = db.get(PurchaseOrder, request.subject_id)
+    return row.status.value if row is not None else None
+
+
 def _settle_subject(db: Session, request: ApprovalRequest, approved: bool) -> None:
     """Carry the final outcome back to the subject."""
     if request.subject == ApprovalSubject.REQUISITION:
@@ -169,6 +178,7 @@ def decide(
     """
     if request.status != ApprovalStatus.PENDING or request.closed_at is not None:
         raise ConflictError("This approval request is already closed")
+    before = {"status": request.status.value, "current_level": request.current_level}
 
     levels = list(request.levels)
     if not 1 <= request.current_level <= len(levels):
@@ -205,6 +215,25 @@ def decide(
         request.current_level += 1
 
     db.flush()
+    audit_service.record(
+        db, actor=approver, entity_type="approval_request", entity_id=request.id,
+        action="approve" if decision == DecisionOutcome.APPROVED else "reject",
+        org_unit_id=request.org_unit_id, before=before,
+        after={
+            "status": request.status.value,
+            "current_level": request.current_level,
+            "subject": request.subject.value,
+            "subject_id": request.subject_id,
+            "subject_status": _subject_status(db, request),
+            "level": row.level,
+            "decision_id": row.id,
+            "comment": comment,
+        },
+        summary=(
+            f"Level {row.level} {decision.value.lower()} "
+            f"{request.subject.value.lower()} {request.subject_id}"
+        ),
+    )
     return row
 
 
@@ -270,6 +299,7 @@ def create_rule(
     max_value=None,
     levels,
     active: bool = True,
+    actor: User | None = None,
 ) -> ApprovalRule:
     if org_unit_id is not None and db.get(OrgUnit, org_unit_id) is None:
         raise LookupError(f"Org unit {org_unit_id} not found")
@@ -286,6 +316,12 @@ def create_rule(
         active=active,
     )
     db.add(rule)
+    db.flush()
+    audit_service.record(
+        db, actor=actor, entity_type="approval_rule", entity_id=rule.id, action="create",
+        org_unit_id=rule.org_unit_id, after=audit_service.model_snapshot(rule),
+        summary=f"Created {subject.value.lower()} approval rule {rule.id}",
+    )
     db.commit()
     db.refresh(rule)
     return rule
@@ -294,11 +330,14 @@ def create_rule(
 _RULE_FIELDS = {"org_unit_id", "min_value", "max_value", "levels", "active"}
 
 
-def update_rule(db: Session, rule: ApprovalRule, changes: dict) -> ApprovalRule:
+def update_rule(
+    db: Session, rule: ApprovalRule, changes: dict, actor: User | None = None,
+) -> ApprovalRule:
     """Apply only the keys present in changes. Requests already in flight keep their copied levels."""
     unknown = set(changes) - _RULE_FIELDS
     if unknown:
         raise ValueError(f"Unknown rule field(s): {sorted(unknown)}")
+    before = audit_service.model_snapshot(rule)
 
     org_unit_id = changes.get("org_unit_id", rule.org_unit_id)
     min_value = changes.get("min_value", rule.min_value)
@@ -323,6 +362,13 @@ def update_rule(db: Session, rule: ApprovalRule, changes: dict) -> ApprovalRule:
     rule.max_value = _dec(max_value) if max_value is not None else None
     rule.levels = levels
     rule.active = bool(active)
+    db.flush()
+    changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(rule))
+    audit_service.record(
+        db, actor=actor, entity_type="approval_rule", entity_id=rule.id, action="update",
+        org_unit_id=rule.org_unit_id, before=changed_before, after=changed_after,
+        summary=f"Changed approval rule {rule.id}",
+    )
     db.commit()
     db.refresh(rule)
     return rule

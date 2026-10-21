@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from datetime import date, datetime
 from app.db.database import get_db
 from app.models.purchase_order import PurchaseOrder, PurchaseOrderLine, POStatus
+from app.services import audit_service
 
 router = APIRouter(prefix="/purchase-orders", tags=["purchase-orders"])
 
@@ -88,6 +89,14 @@ def create_po(payload: POCreate, db: Session = Depends(get_db)):
     db.flush()
     for line in lines_data:
         db.add(PurchaseOrderLine(purchase_order_id=po.id, **line.model_dump()))
+    db.flush()
+    after = audit_service.model_snapshot(po)
+    after["lines"] = [audit_service.model_snapshot(line) for line in po.lines]
+    audit_service.record(
+        db, actor=None, actor_name=payload.created_by, entity_type="purchase_order",
+        entity_id=po.id, action="create", org_unit_id=po.location_id, after=after,
+        summary=f"Created {po.po_number} with {len(lines_data)} line(s)",
+    )
     db.commit()
     db.refresh(po)
     return po
@@ -106,6 +115,14 @@ def update_po_status(po_id: int, status: POStatus, db: Session = Depends(get_db)
     po = db.get(PurchaseOrder, po_id)
     if not po:
         raise HTTPException(404, "Purchase order not found")
+    before = audit_service.model_snapshot(po)
     po.status = status
+    db.flush()
+    changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(po))
+    audit_service.record(
+        db, actor=None, entity_type="purchase_order", entity_id=po.id, action="update",
+        org_unit_id=po.location_id, before=changed_before, after=changed_after,
+        summary=f"{po.po_number} status set to {status.value}",
+    )
     db.commit()
     return {"id": po_id, "status": status}

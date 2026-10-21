@@ -28,7 +28,9 @@ from app.models import Item, OrgUnit, Supplier, SupplierItem
 from app.models.approval import ApprovalSubject
 from app.models.purchase_order import POStatus, PurchaseOrder, PurchaseOrderLine
 from app.models.requisition import Requisition, RequisitionLine, RequisitionStatus
+from app.models.user import User
 from app.models.vpc import VendorPriceCatalogue
+from app.services import audit_service
 from app.services.approval_service import ConflictError, open_request
 
 CENT = Decimal("0.01")
@@ -76,6 +78,18 @@ def _next_number(db: Session, prefix: str, number_column, day: date) -> str:
     return f"{stem}{sequence:04d}"
 
 
+def _requisition_snapshot(requisition: Requisition) -> dict:
+    snap = audit_service.model_snapshot(requisition)
+    snap["lines"] = [audit_service.model_snapshot(line) for line in requisition.lines]
+    return snap
+
+
+def _purchase_order_snapshot(purchase_order: PurchaseOrder) -> dict:
+    snap = audit_service.model_snapshot(purchase_order)
+    snap["lines"] = [audit_service.model_snapshot(line) for line in purchase_order.lines]
+    return snap
+
+
 def _build_lines(lines: list[LineSpec]) -> list[RequisitionLine]:
     return [
         RequisitionLine(
@@ -96,6 +110,7 @@ def create_draft(
     needed_by: date | None = None,
     notes: str | None = None,
     requested_by: str,
+    actor: User | None = None,
 ) -> Requisition:
     if db.get(OrgUnit, org_unit_id) is None:
         raise LookupError(f"Org unit {org_unit_id} not found")
@@ -114,7 +129,17 @@ def create_draft(
         lines=_build_lines(lines),
     )
     db.add(requisition)
-    _commit(db)
+
+    def audit() -> None:
+        db.flush()
+        audit_service.record(
+            db, actor=actor, actor_name=requested_by, entity_type="requisition",
+            entity_id=requisition.id, action="create", org_unit_id=org_unit_id,
+            after=_requisition_snapshot(requisition),
+            summary=f"Created draft requisition {requisition.requisition_number}",
+        )
+
+    _commit(db, audit)
     db.refresh(requisition)
     return requisition
 
@@ -127,6 +152,7 @@ def update_draft(
     supplier_id: int | None,
     needed_by: date | None,
     notes: str | None,
+    actor: User | None = None,
 ) -> Requisition:
     """Replace a draft's header and lines. Refused once the requisition is no longer DRAFT."""
     if requisition.status != RequisitionStatus.DRAFT:
@@ -134,13 +160,24 @@ def update_draft(
     _check_supplier(db, supplier_id)
     lines = _validate_lines(db, lines)
 
+    before = _requisition_snapshot(requisition)
     requisition.lines.clear()
     db.flush()  # delete old lines before inserting replacements (unique item per requisition)
     requisition.lines = _build_lines(lines)
     requisition.supplier_id = supplier_id
     requisition.needed_by = needed_by
     requisition.notes = notes
-    _commit(db)
+
+    def audit() -> None:
+        db.flush()
+        changed_before, changed_after = audit_service.diff(before, _requisition_snapshot(requisition))
+        audit_service.record(
+            db, actor=actor, entity_type="requisition", entity_id=requisition.id, action="update",
+            org_unit_id=requisition.org_unit_id, before=changed_before, after=changed_after,
+            summary=f"Edited draft requisition {requisition.requisition_number}",
+        )
+
+    _commit(db, audit)
     db.refresh(requisition)
     return requisition
 
@@ -169,12 +206,15 @@ def _unit_price(db: Session, org_unit_id: int, item_id: int, today: date) -> Dec
     raise ValueError(f"No price for item {label}: no catalogue price and no unit cost")
 
 
-def submit(db: Session, requisition: Requisition, today: date | None = None) -> Requisition:
+def submit(
+    db: Session, requisition: Requisition, today: date | None = None, actor: User | None = None,
+) -> Requisition:
     if requisition.status != RequisitionStatus.DRAFT:
         raise ConflictError("Only draft requisitions can be submitted")
     if not requisition.lines:
         raise ValueError("A requisition needs at least one line")
     today = today or date.today()
+    before = _requisition_snapshot(requisition)
 
     # Price everything first so a missing price leaves the draft untouched.
     prices = {line.item_id: _unit_price(db, requisition.org_unit_id, line.item_id, today)
@@ -195,7 +235,18 @@ def submit(db: Session, requisition: Requisition, today: date | None = None) -> 
     )
     if approval is None:
         requisition.status = RequisitionStatus.APPROVED  # no rule matched: no approval needed
-    _commit(db)
+
+    def audit() -> None:
+        db.flush()
+        changed_before, changed_after = audit_service.diff(before, _requisition_snapshot(requisition))
+        routing = "awaiting approval" if approval is not None else "no approval rule matched"
+        audit_service.record(
+            db, actor=actor, entity_type="requisition", entity_id=requisition.id, action="submit",
+            org_unit_id=requisition.org_unit_id, before=changed_before, after=changed_after,
+            summary=f"Submitted {requisition.requisition_number} for {requisition.total_value} ({routing})",
+        )
+
+    _commit(db, audit)
     db.refresh(requisition)
     return requisition
 
@@ -238,11 +289,14 @@ def _line_supplier(db: Session, requisition: Requisition, line: RequisitionLine)
     )
 
 
-def convert(db: Session, requisition: Requisition, today: date | None = None) -> list[PurchaseOrder]:
+def convert(
+    db: Session, requisition: Requisition, today: date | None = None, actor: User | None = None,
+) -> list[PurchaseOrder]:
     """Split an APPROVED requisition into one DRAFT purchase order per supplier."""
     if requisition.status != RequisitionStatus.APPROVED:
         raise ConflictError("Only approved requisitions can be converted")
     today = today or date.today()
+    before = _requisition_snapshot(requisition)
 
     # Resolve every line's supplier before creating anything.
     groups: dict[int, list[tuple[RequisitionLine, int | None]]] = {}
@@ -286,15 +340,38 @@ def convert(db: Session, requisition: Requisition, today: date | None = None) ->
         purchase_orders.append(purchase_order)
 
     requisition.status = RequisitionStatus.CONVERTED
-    _commit(db)
+
+    def audit() -> None:
+        db.flush()
+        numbers = ", ".join(po.po_number for po in purchase_orders)
+        for purchase_order in purchase_orders:
+            audit_service.record(
+                db, actor=actor, entity_type="purchase_order", entity_id=purchase_order.id,
+                action="create", org_unit_id=purchase_order.location_id,
+                after=_purchase_order_snapshot(purchase_order),
+                summary=f"Created {purchase_order.po_number} from requisition {requisition.requisition_number}",
+            )
+        changed_before, changed_after = audit_service.diff(before, _requisition_snapshot(requisition))
+        audit_service.record(
+            db, actor=actor, entity_type="requisition", entity_id=requisition.id, action="convert",
+            org_unit_id=requisition.org_unit_id, before=changed_before, after=changed_after,
+            summary=f"Converted {requisition.requisition_number} into {numbers}",
+        )
+
+    _commit(db, audit)
     for purchase_order in purchase_orders:
         db.refresh(purchase_order)
     return purchase_orders
 
 
-def _commit(db: Session) -> None:
-    """Commit, turning a lost race on a generated number into a retryable conflict."""
+def _commit(db: Session, before_commit=None) -> None:
+    """Run before_commit (it may flush and stage audit rows), then commit.
+
+    A lost race on a generated number, raised by either step, becomes a retryable conflict.
+    """
     try:
+        if before_commit is not None:
+            before_commit()
         db.commit()
     except IntegrityError as exc:
         db.rollback()

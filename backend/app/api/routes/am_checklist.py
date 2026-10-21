@@ -5,6 +5,7 @@ from pydantic import BaseModel
 
 from app.db.database import get_db
 from app.models.am_checklist import AMChecklistTask, AMChecklistEntry, ChecklistFrequency
+from app.services import audit_service
 
 router = APIRouter(prefix="/am/checklist", tags=["area-manager"])
 
@@ -120,6 +121,7 @@ def mark_complete(task_id: int, payload: CompleteRequest, db: Session = Depends(
         AMChecklistEntry.period_date == period,
     ).first()
 
+    before = audit_service.model_snapshot(entry) if entry else None
     if entry:
         entry.completed = True
         entry.completed_by = payload.completed_by
@@ -136,7 +138,17 @@ def mark_complete(task_id: int, payload: CompleteRequest, db: Session = Depends(
             notes=payload.notes,
         )
         db.add(entry)
-
+    db.flush()
+    after = audit_service.model_snapshot(entry)
+    changed_before, changed_after = (
+        audit_service.diff(before, after) if before is not None else (None, after)
+    )
+    audit_service.record(
+        db, actor=None, actor_name=payload.completed_by, entity_type="am_checklist_entry",
+        entity_id=entry.id, action="complete", org_unit_id=entry.location_id,
+        before=changed_before, after=changed_after,
+        summary=f"Completed checklist task {task.id}: {task.title}",
+    )
     db.commit()
     db.refresh(entry)
     return entry
@@ -150,9 +162,18 @@ def validate_entry(entry_id: int, payload: ValidateRequest, db: Session = Depend
         raise HTTPException(404, "Entry not found")
     if not entry.completed:
         raise HTTPException(400, "Cannot validate an incomplete task")
+    before = audit_service.model_snapshot(entry)
     entry.validated = True
     entry.validated_by = payload.validated_by
     entry.validated_at = datetime.utcnow()
+    db.flush()
+    changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(entry))
+    audit_service.record(
+        db, actor=None, actor_name=payload.validated_by, entity_type="am_checklist_entry",
+        entity_id=entry.id, action="validate", org_unit_id=entry.location_id,
+        before=changed_before, after=changed_after,
+        summary=f"Validated checklist entry {entry.id}",
+    )
     db.commit()
     db.refresh(entry)
     return entry
@@ -174,9 +195,17 @@ def undo_complete(task_id: int, location_id: int, db: Session = Depends(get_db))
         raise HTTPException(404, "No completion record found")
     if entry.validated:
         raise HTTPException(400, "Cannot undo a validated entry")
+    before = audit_service.model_snapshot(entry)
     entry.completed = False
     entry.completed_by = None
     entry.completed_at = None
+    db.flush()
+    changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(entry))
+    audit_service.record(
+        db, actor=None, entity_type="am_checklist_entry", entity_id=entry.id, action="undo",
+        org_unit_id=entry.location_id, before=changed_before, after=changed_after,
+        summary=f"Un-completed checklist entry {entry.id}",
+    )
     db.commit()
     db.refresh(entry)
     return entry

@@ -27,6 +27,8 @@ from app.models import Item, OrgUnit
 from app.models.location import OrgTier
 from app.models.stock import MovementType, StockMovement
 from app.models.stock_count import CountTemplate, StockCount, StockCountLine, StockCountStatus
+from app.models.user import User
+from app.services import audit_service
 from app.services.spot_check_selector import get_theoretical_stock
 
 CENT = Decimal("0.01")
@@ -66,6 +68,7 @@ def create_template(
     name: str,
     item_ids: list[int],
     org_unit_id: int | None = None,
+    actor: User | None = None,
 ) -> CountTemplate:
     """Save an ordered list of items as a reusable count route."""
     ordered = _unique_ordered(item_ids)
@@ -76,6 +79,12 @@ def create_template(
         raise LookupError(f"Org unit {org_unit_id} not found")
     template = CountTemplate(name=name, org_unit_id=org_unit_id, item_ids=ordered)
     db.add(template)
+    db.flush()
+    audit_service.record(
+        db, actor=actor, entity_type="count_template", entity_id=template.id, action="create",
+        org_unit_id=org_unit_id, after=audit_service.model_snapshot(template),
+        summary=f"Created count template '{name}' ({len(ordered)} items)",
+    )
     db.commit()
     db.refresh(template)
     return template
@@ -90,6 +99,7 @@ def create_count(
     template_id: int | None = None,
     item_ids: list[int] | None = None,
     created_by: str | None = None,
+    actor: User | None = None,
 ) -> StockCount:
     """Open a full count for a site. Give exactly one of template_id or item_ids."""
     if (template_id is None) == (item_ids is None):
@@ -135,6 +145,12 @@ def create_count(
             unit_cost=item.unit_cost,
         ))
 
+    audit_service.record(
+        db, actor=actor, actor_name=created_by,
+        entity_type="stock_count", entity_id=count.id, action="create",
+        org_unit_id=org_unit_id, after=audit_service.model_snapshot(count),
+        summary=f"Opened stock count '{name}' with {len(ordered)} items",
+    )
     db.commit()
     db.refresh(count)
     return count
@@ -147,9 +163,12 @@ def _get_count(db: Session, count_id: int) -> StockCount:
     return count
 
 
-def record_counts(db: Session, count_id: int, lines: list[dict]) -> StockCount:
+def record_counts(
+    db: Session, count_id: int, lines: list[dict], actor: User | None = None,
+) -> StockCount:
     """Record counted quantities. Each dict: item_id, counted_qty, optional
-    counted_by and notes. Can be called repeatedly until the count is submitted."""
+    counted_by and notes. Can be called repeatedly until the count is submitted.
+    The audit trail gets one summary event for the whole batch."""
     count = _get_count(db, count_id)
     if count.status != StockCountStatus.OPEN:
         raise ValueError("Stock count is already submitted")
@@ -169,12 +188,20 @@ def record_counts(db: Session, count_id: int, lines: list[dict]) -> StockCount:
         if entry.get("notes") is not None:
             line.notes = entry["notes"]
 
+    audit_service.record(
+        db, actor=actor, entity_type="stock_count", entity_id=count.id, action="update",
+        org_unit_id=count.org_unit_id,
+        after={"lines": [
+            {"item_id": e["item_id"], "counted_qty": str(_qty(e["counted_qty"]))} for e in lines
+        ]},
+        summary=f"Recorded counts for {len(lines)} line(s) on '{count.name}'",
+    )
     db.commit()
     db.refresh(count)
     return count
 
 
-def submit_count(db: Session, count_id: int) -> StockCount:
+def submit_count(db: Session, count_id: int, actor: User | None = None) -> StockCount:
     """Finalise a count and post the adjustments.
 
     Refuses (ValueError) while any line has no counted quantity.
@@ -192,6 +219,7 @@ def submit_count(db: Session, count_id: int) -> StockCount:
     if uncounted:
         raise ValueError(f"Count has uncounted lines for items: {uncounted}")
 
+    before = audit_service.model_snapshot(count)
     now = datetime.utcnow()
     for line in count.lines:
         counted = _dec(line.counted_qty)
@@ -221,6 +249,13 @@ def submit_count(db: Session, count_id: int) -> StockCount:
 
     count.status = StockCountStatus.SUBMITTED
     count.submitted_at = now
+    db.flush()
+    changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(count))
+    audit_service.record(
+        db, actor=actor, entity_type="stock_count", entity_id=count.id, action="submit",
+        org_unit_id=count.org_unit_id, before=changed_before, after=changed_after,
+        summary=f"Submitted stock count '{count.name}' ({len(count.lines)} lines)",
+    )
     db.commit()
     db.refresh(count)
     return count

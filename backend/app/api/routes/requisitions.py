@@ -221,6 +221,7 @@ def create_requisition(
         needed_by=body.needed_by,
         notes=body.notes,
         requested_by=body.requested_by or current_user.name,
+        actor=current_user,
     )
     return RequisitionOut.from_req(requisition)
 
@@ -261,6 +262,7 @@ def update_requisition(
     updated = _call(
         update_draft, db, requisition, _lines(body.lines),
         supplier_id=body.supplier_id, needed_by=body.needed_by, notes=body.notes,
+        actor=current_user,
     )
     return RequisitionOut.from_req(updated)
 
@@ -272,7 +274,7 @@ def submit_requisition(
     db: Session = Depends(get_db),
 ):
     requisition = _get_for_write(db, requisition_id, current_user)
-    return RequisitionOut.from_req(_call(submit, db, requisition))
+    return RequisitionOut.from_req(_call(submit, db, requisition, actor=current_user))
 
 
 @router.post("/{requisition_id}/convert", response_model=ConvertOut)
@@ -282,7 +284,7 @@ def convert_requisition(
     db: Session = Depends(get_db),
 ):
     requisition = _get_for_write(db, requisition_id, current_user)
-    purchase_orders = _call(convert, db, requisition)
+    purchase_orders = _call(convert, db, requisition, actor=current_user)
     awaiting = {
         po.id: approval_service.get_request(db, ApprovalSubject.PURCHASE_ORDER, po.id) is not None
         for po in purchase_orders

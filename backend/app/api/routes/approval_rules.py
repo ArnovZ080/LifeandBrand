@@ -87,7 +87,7 @@ def create_rule(
         approval_service.create_rule, db,
         subject=body.subject, org_unit_id=body.org_unit_id,
         min_value=body.min_value, max_value=body.max_value,
-        levels=body.levels, active=body.active,
+        levels=body.levels, active=body.active, actor=current_user,
     )
     return RuleOut.from_rule(rule)
 
@@ -125,5 +125,5 @@ def update_rule(
     for unit_id in targets:
         if not approval_service.can_manage_rule(db, current_user, unit_id):
             raise HTTPException(403, "Your role cannot change this approval rule")
-    updated = _call(approval_service.update_rule, db, rule, changes)
+    updated = _call(approval_service.update_rule, db, rule, changes, actor=current_user)
     return RuleOut.from_rule(updated)

@@ -33,6 +33,7 @@ from app.models.requisition import Requisition, RequisitionLine, RequisitionStat
 from app.models.approval import (
     ApprovalRule, ApprovalRequest, ApprovalDecision, ApprovalSubject, ApprovalStatus, DecisionOutcome,
 )
+from app.models.audit import AuditEvent, AuditLogImmutableError
 
 __all__ = [
     "OrgUnit", "OrgTier", "Location",
@@ -67,4 +68,5 @@ __all__ = [
     "Requisition", "RequisitionLine", "RequisitionStatus",
     "ApprovalRule", "ApprovalRequest", "ApprovalDecision",
     "ApprovalSubject", "ApprovalStatus", "DecisionOutcome",
+    "AuditEvent", "AuditLogImmutableError",
 ]
