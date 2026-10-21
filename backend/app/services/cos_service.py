@@ -30,6 +30,8 @@ from app.models.cos_flag import CosFlag
 from app.models.location import OrgTier
 from app.models.stock import MovementType
 from app.services.net_sales import net_sales
+from app.services.stock_count_service import period_count_variance
+from app.services.waste_service import period_waste_value
 
 
 def period_bounds(period: str) -> tuple[date, date]:
@@ -254,7 +256,8 @@ def compute_variance(db: Session, org_unit_id: int, period: str) -> dict:
             flag.cause = classify(flag, build_context(db, flag))
     db.commit()
 
-    net = net_sales(db, org_unit_id, *period_bounds(period), level="L2")
+    start, end = period_bounds(period)
+    net = net_sales(db, org_unit_id, start, end, level="L2")
 
     def pct(v: Decimal) -> float | None:
         if net is None or net == 0:
@@ -273,4 +276,15 @@ def compute_variance(db: Session, org_unit_id: int, period: str) -> dict:
         "actual_usage_value": float(actual_value),
         "theoretical_usage_value": float(theoretical_value),
     }
+
+    # Explained components of the gap (actual - theoretical). Waste reduces
+    # physical stock, and recipes do not include it, so it sits inside the gap
+    # and is subtracted to get the unexplained remainder. Count variance is
+    # reported alongside but NOT subtracted: stock counts do not feed the usage
+    # equation (opening/closing still come from spot checks).
+    waste_value = period_waste_value(db, org_unit_id, start, end)
+    count_variance_value = period_count_variance(db, org_unit_id, start, end)
+    summary["waste_value"] = float(waste_value)
+    summary["count_variance_value"] = float(count_variance_value)
+    summary["unexplained_variance_value"] = float(actual_value - theoretical_value - waste_value)
     return {"summary": summary, "flags": period_flags}

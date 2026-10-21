@@ -23,6 +23,11 @@ class VarianceSummary(BaseModel):
     variance_pct: float | None
     actual_usage_value: float | None
     theoretical_usage_value: float | None
+    # Explained components of the gap (Feature 1): logged waste, submitted
+    # stock-count variance, and the remainder after removing waste.
+    waste_value: float | None = None
+    count_variance_value: float | None = None
+    unexplained_variance_value: float | None = None
 
 
 class FlagOut(BaseModel):

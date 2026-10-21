@@ -27,6 +27,8 @@ from app.models.vpc import VendorPriceCatalogue
 from app.models.budget import Budget
 from app.models.raw_ingest import RawIngest, IngestStage
 from app.models.cos_flag import CosFlag, CosDismissal, CosCause
+from app.models.waste import WasteEvent, WasteReason
+from app.models.stock_count import CountTemplate, StockCount, StockCountLine, StockCountStatus
 
 __all__ = [
     "OrgUnit", "OrgTier", "Location",
@@ -56,4 +58,6 @@ __all__ = [
     "Budget",
     "RawIngest", "IngestStage",
     "CosFlag", "CosDismissal", "CosCause",
+    "WasteEvent", "WasteReason",
+    "CountTemplate", "StockCount", "StockCountLine", "StockCountStatus",
 ]
