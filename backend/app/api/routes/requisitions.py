@@ -322,6 +322,7 @@ def decide_requisition(
         raise HTTPException(404, "No approval is open for this requisition")
     outcome = DecisionOutcome.APPROVED if body.decision == "approved" else DecisionOutcome.REJECTED
     _call(approval_service.decide, db, request, current_user, outcome, body.comment)
+    db.commit()
     db.refresh(request)
     return ApprovalOut.from_request(request)
 

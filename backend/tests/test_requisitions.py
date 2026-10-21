@@ -524,3 +524,22 @@ def test_http_decision_and_rule_errors(api, db, world):
     assert api.as_user("md").post(
         f"/api/v1/requisitions/{no_approval['id']}/decisions", json={"decision": "rejected"}
     ).status_code == 404
+
+
+def test_http_decision_is_committed_and_survives_rollback(api, db, world):
+    from app.models.approval import ApprovalDecision
+
+    api.as_user("md").post("/api/v1/approval-rules/", json={
+        "subject": "REQUISITION", "org_unit_id": None, "levels": ["area_manager"],
+    })
+    created = api.as_user("gm_a").post("/api/v1/requisitions/", json={
+        "org_unit_id": world["site_a"].id, "requested_by": "GM A",
+        "lines": [{"item_id": world["steak"].id, "quantity": 2}],
+    }).json()
+    api.as_user("gm_a").post(f"/api/v1/requisitions/{created['id']}/submit")
+    ok = api.as_user("am_north").post(
+        f"/api/v1/requisitions/{created['id']}/decisions", json={"decision": "approved"})
+    assert ok.status_code == 200
+
+    db.rollback()
+    assert db.query(ApprovalDecision).count() == 1
