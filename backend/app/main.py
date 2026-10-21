@@ -8,6 +8,7 @@ from app.api.routes import (
     am_checklist, ops_visit, one_on_one,
     auth, org_units, operational_alerts,
     ingest, daily_pulse, cos, waste, stock_counts,
+    requisitions, approval_rules,
 )
 from app.db.database import SessionLocal
 from app.services.am_tasks import seed_tasks
@@ -72,6 +73,10 @@ app.include_router(cos.router, prefix="/api/v1")
 # Wastage and stock counts (Feature 1)
 app.include_router(waste.router, prefix="/api/v1")
 app.include_router(stock_counts.router, prefix="/api/v1")
+
+# Requisitions and multi-level approvals (Feature 2)
+app.include_router(requisitions.router, prefix="/api/v1")
+app.include_router(approval_rules.router, prefix="/api/v1")
 
 
 @app.get("/health")
