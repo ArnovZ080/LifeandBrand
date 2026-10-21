@@ -34,6 +34,7 @@ from app.models.approval import (
     ApprovalRule, ApprovalRequest, ApprovalDecision, ApprovalSubject, ApprovalStatus, DecisionOutcome,
 )
 from app.models.audit import AuditEvent, AuditLogImmutableError
+from app.models.forecast import ForecastRun, ForecastLine
 
 __all__ = [
     "OrgUnit", "OrgTier", "Location",
@@ -69,4 +70,5 @@ __all__ = [
     "ApprovalRule", "ApprovalRequest", "ApprovalDecision",
     "ApprovalSubject", "ApprovalStatus", "DecisionOutcome",
     "AuditEvent", "AuditLogImmutableError",
+    "ForecastRun", "ForecastLine",
 ]

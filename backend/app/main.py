@@ -8,7 +8,7 @@ from app.api.routes import (
     am_checklist, ops_visit, one_on_one,
     auth, org_units, operational_alerts,
     ingest, daily_pulse, cos, waste, stock_counts,
-    requisitions, approval_rules, audit,
+    requisitions, approval_rules, audit, forecasts, predictive_ordering,
 )
 from app.db.database import SessionLocal
 from app.services.am_tasks import seed_tasks
@@ -80,6 +80,10 @@ app.include_router(approval_rules.router, prefix="/api/v1")
 
 # Append-only audit log (Feature 3)
 app.include_router(audit.router, prefix="/api/v1")
+
+# Sales forecasting and predictive ordering (Feature 4)
+app.include_router(forecasts.router, prefix="/api/v1")
+app.include_router(predictive_ordering.router, prefix="/api/v1")
 
 
 @app.get("/health")
