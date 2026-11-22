@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 from app.db.database import get_db
 from app.models.user import User
 from app.models.waste import WasteEvent, WasteReason
@@ -85,6 +85,7 @@ def log_waste_event(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    ensure_unit_visible(db, current_user, payload.org_unit_id)
     try:
         event = log_waste(
             db,
@@ -110,8 +111,9 @@ def get_waste_summary(
     date_from: date,
     date_to: date,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    ensure_unit_visible(db, current_user, org_unit_id)
     if date_to < date_from:
         raise HTTPException(400, "date_to must be on or after date_from")
     result = waste_summary(db, org_unit_id, date_from, date_to)

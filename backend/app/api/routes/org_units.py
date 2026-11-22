@@ -6,7 +6,7 @@ from app.db.database import get_db
 from app.models.location import OrgUnit, OrgTier
 from app.models.brand import Brand
 from app.models.user import User
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 
 router = APIRouter(prefix="/org-units", tags=["org-units"])
 
@@ -82,8 +82,10 @@ def list_units(db: Session = Depends(get_db), _: User = Depends(get_current_user
 def create_unit(
     payload: OrgUnitCreate,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    if payload.parent_id is not None:
+        ensure_unit_visible(db, current_user, payload.parent_id)
     unit = OrgUnit(**payload.model_dump())
     db.add(unit)
     db.commit()

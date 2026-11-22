@@ -4,8 +4,10 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Any
 
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 from app.db.database import get_db
 from app.models.ops_visit import OpsVisitReport
+from app.models.user import User
 from app.services import audit_service
 
 router = APIRouter(prefix="/am/ops-visits", tags=["area-manager"])
@@ -87,7 +89,13 @@ class OpsVisitSummary(BaseModel):
 
 
 @router.get("/", response_model=list[OpsVisitSummary])
-def list_visits(location_id: int, limit: int = 30, db: Session = Depends(get_db)):
+def list_visits(
+    location_id: int,
+    limit: int = 30,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_unit_visible(db, current_user, location_id)
     return (
         db.query(OpsVisitReport)
         .filter(OpsVisitReport.location_id == location_id)
@@ -98,7 +106,12 @@ def list_visits(location_id: int, limit: int = 30, db: Session = Depends(get_db)
 
 
 @router.post("/", response_model=OpsVisitOut, status_code=201)
-def create_visit(payload: OpsVisitCreate, db: Session = Depends(get_db)):
+def create_visit(
+    payload: OpsVisitCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_unit_visible(db, current_user, payload.location_id)
     report = OpsVisitReport(
         location_id=payload.location_id,
         visit_date=payload.visit_date,
@@ -121,7 +134,7 @@ def create_visit(payload: OpsVisitCreate, db: Session = Depends(get_db)):
     db.flush()
     # Visit content is not copied into the audit log; the record marks who logged what, when.
     audit_service.record(
-        db, actor=None, actor_name=payload.visit_done_by, entity_type="ops_visit_report",
+        db, actor=current_user, actor_name=payload.visit_done_by, entity_type="ops_visit_report",
         entity_id=report.id, action="create", org_unit_id=report.location_id,
         summary=f"Logged ops visit for {payload.visit_date.isoformat()} (content not copied)",
     )
@@ -131,8 +144,13 @@ def create_visit(payload: OpsVisitCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{report_id}", response_model=OpsVisitOut)
-def get_visit(report_id: int, db: Session = Depends(get_db)):
+def get_visit(
+    report_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     report = db.get(OpsVisitReport, report_id)
     if not report:
         raise HTTPException(404, "Report not found")
+    ensure_unit_visible(db, current_user, report.location_id, detail="Report not found")
     return report

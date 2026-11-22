@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 from app.db.database import get_db
 from app.models.am_checklist import AMChecklistTask, AMChecklistEntry, ChecklistFrequency
+from app.models.user import User
 from app.services import audit_service
 
 router = APIRouter(prefix="/am/checklist", tags=["area-manager"])
@@ -68,7 +70,7 @@ class ValidateRequest(BaseModel):
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @router.get("/tasks", response_model=dict[str, list[TaskOut]])
-def get_tasks(db: Session = Depends(get_db)):
+def get_tasks(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """Return all active tasks grouped by frequency."""
     tasks = db.query(AMChecklistTask).filter(AMChecklistTask.is_active == True).order_by(
         AMChecklistTask.frequency, AMChecklistTask.order_num
@@ -85,11 +87,13 @@ def get_period_checklist(
     frequency: ChecklistFrequency,
     ref_date: date | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Returns all tasks for a frequency with their completion entry for the
     current period (or the period containing ref_date).
     """
+    ensure_unit_visible(db, current_user, location_id)
     period = _period_date(frequency, ref_date)
     tasks = (
         db.query(AMChecklistTask)
@@ -108,8 +112,14 @@ def get_period_checklist(
 
 
 @router.post("/tasks/{task_id}/complete", response_model=EntryOut)
-def mark_complete(task_id: int, payload: CompleteRequest, db: Session = Depends(get_db)):
+def mark_complete(
+    task_id: int,
+    payload: CompleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Mark a task as completed by the AM for the current period."""
+    ensure_unit_visible(db, current_user, payload.location_id)
     task = db.get(AMChecklistTask, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
@@ -144,7 +154,7 @@ def mark_complete(task_id: int, payload: CompleteRequest, db: Session = Depends(
         audit_service.diff(before, after) if before is not None else (None, after)
     )
     audit_service.record(
-        db, actor=None, actor_name=payload.completed_by, entity_type="am_checklist_entry",
+        db, actor=current_user, actor_name=payload.completed_by, entity_type="am_checklist_entry",
         entity_id=entry.id, action="complete", org_unit_id=entry.location_id,
         before=changed_before, after=changed_after,
         summary=f"Completed checklist task {task.id}: {task.title}",
@@ -155,11 +165,17 @@ def mark_complete(task_id: int, payload: CompleteRequest, db: Session = Depends(
 
 
 @router.post("/entries/{entry_id}/validate", response_model=EntryOut)
-def validate_entry(entry_id: int, payload: ValidateRequest, db: Session = Depends(get_db)):
+def validate_entry(
+    entry_id: int,
+    payload: ValidateRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Regional Manager validates a completed task."""
     entry = db.get(AMChecklistEntry, entry_id)
     if not entry:
         raise HTTPException(404, "Entry not found")
+    ensure_unit_visible(db, current_user, entry.location_id, detail="Entry not found")
     if not entry.completed:
         raise HTTPException(400, "Cannot validate an incomplete task")
     before = audit_service.model_snapshot(entry)
@@ -169,7 +185,7 @@ def validate_entry(entry_id: int, payload: ValidateRequest, db: Session = Depend
     db.flush()
     changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(entry))
     audit_service.record(
-        db, actor=None, actor_name=payload.validated_by, entity_type="am_checklist_entry",
+        db, actor=current_user, actor_name=payload.validated_by, entity_type="am_checklist_entry",
         entity_id=entry.id, action="validate", org_unit_id=entry.location_id,
         before=changed_before, after=changed_after,
         summary=f"Validated checklist entry {entry.id}",
@@ -180,8 +196,14 @@ def validate_entry(entry_id: int, payload: ValidateRequest, db: Session = Depend
 
 
 @router.post("/tasks/{task_id}/undo", response_model=EntryOut)
-def undo_complete(task_id: int, location_id: int, db: Session = Depends(get_db)):
+def undo_complete(
+    task_id: int,
+    location_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Un-complete a task (only if not yet validated)."""
+    ensure_unit_visible(db, current_user, location_id)
     task = db.get(AMChecklistTask, task_id)
     if not task:
         raise HTTPException(404, "Task not found")
@@ -202,7 +224,7 @@ def undo_complete(task_id: int, location_id: int, db: Session = Depends(get_db))
     db.flush()
     changed_before, changed_after = audit_service.diff(before, audit_service.model_snapshot(entry))
     audit_service.record(
-        db, actor=None, entity_type="am_checklist_entry", entity_id=entry.id, action="undo",
+        db, actor=current_user, entity_type="am_checklist_entry", entity_id=entry.id, action="undo",
         org_unit_id=entry.location_id, before=changed_before, after=changed_after,
         summary=f"Un-completed checklist entry {entry.id}",
     )
@@ -212,8 +234,13 @@ def undo_complete(task_id: int, location_id: int, db: Session = Depends(get_db))
 
 
 @router.get("/summary")
-def get_summary(location_id: int, db: Session = Depends(get_db)):
+def get_summary(
+    location_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Progress summary for all frequencies for the current period."""
+    ensure_unit_visible(db, current_user, location_id)
     summary = {}
     for freq in ChecklistFrequency:
         period = _period_date(freq)

@@ -14,7 +14,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 from app.db.database import get_db
 from app.models import Budget, OrgUnit
 from app.models.location import OrgTier
@@ -59,8 +59,9 @@ def _clamped_window(year: int, month: int, day_count: int) -> tuple[date, date]:
 def daily_pulse(
     org_unit_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    ensure_unit_visible(db, current_user, org_unit_id)
     unit = db.get(OrgUnit, org_unit_id)
     if unit is None:
         raise HTTPException(404, "Org unit not found")

@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 from app.db.database import get_db
 from app.models.item import Department
+from app.models.user import User
 from app.models.spot_check import SpotCheckSession, SpotCheckItem, SpotCheckBatchCount, SpotCheckStatus
 from app.services.spot_check_selector import (
     select_items_for_session,
@@ -189,7 +191,12 @@ def _item_is_counted(si: SpotCheckItem) -> bool:
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
 @router.post("/generate", response_model=SessionOut, status_code=201)
-def generate_session(payload: GenerateSessionRequest, db: Session = Depends(get_db)):
+def generate_session(
+    payload: GenerateSessionRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_unit_visible(db, current_user, payload.location_id)
     existing = (
         db.query(SpotCheckSession)
         .filter(
@@ -276,7 +283,12 @@ def generate_session(payload: GenerateSessionRequest, db: Session = Depends(get_
 
 
 @router.get("/today", response_model=list[SessionOut])
-def get_today_sessions(location_id: int, db: Session = Depends(get_db)):
+def get_today_sessions(
+    location_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_unit_visible(db, current_user, location_id)
     sessions = (
         db.query(SpotCheckSession)
         .filter(
@@ -290,10 +302,15 @@ def get_today_sessions(location_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{session_id}", response_model=SessionOut)
-def get_session(session_id: int, db: Session = Depends(get_db)):
+def get_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     session = db.get(SpotCheckSession, session_id)
     if not session:
         raise HTTPException(404, "Session not found")
+    ensure_unit_visible(db, current_user, session.location_id, detail="Session not found")
     return _session_to_out(session)
 
 
@@ -303,11 +320,13 @@ def submit_count(
     spot_item_id: int,
     payload: CountSubmission,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Submit a count for a non-perishable item."""
     session = db.get(SpotCheckSession, session_id)
     if not session:
         raise HTTPException(404, "Session not found")
+    ensure_unit_visible(db, current_user, session.location_id, detail="Session not found")
 
     si = db.get(SpotCheckItem, spot_item_id)
     if not si or si.session_id != session_id:
@@ -339,6 +358,7 @@ def submit_batch_count(
     spot_item_id: int,
     payload: BatchCountSubmission,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Submit a count for one batch of a perishable item.
@@ -347,6 +367,7 @@ def submit_batch_count(
     session = db.get(SpotCheckSession, session_id)
     if not session:
         raise HTTPException(404, "Session not found")
+    ensure_unit_visible(db, current_user, session.location_id, detail="Session not found")
 
     si = db.get(SpotCheckItem, spot_item_id)
     if not si or si.session_id != session_id:
@@ -395,7 +416,9 @@ def get_history(
     department: Department | None = None,
     limit: int = 30,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    ensure_unit_visible(db, current_user, location_id)
     q = db.query(SpotCheckSession).filter(SpotCheckSession.location_id == location_id)
     if department:
         q = q.filter(SpotCheckSession.department == department)
@@ -404,11 +427,17 @@ def get_history(
 
 
 @router.get("/coverage/{location_id}/{department}")
-def get_cycle_coverage(location_id: int, department: Department, db: Session = Depends(get_db)):
+def get_cycle_coverage(
+    location_id: int,
+    department: Department,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Shows how many items in this department have and haven't been checked
     within the current {CYCLE_DAYS}-day window. Useful for monitoring cycle health.
     """
+    ensure_unit_visible(db, current_user, location_id)
     from datetime import timedelta
     from app.models.item import Item
 

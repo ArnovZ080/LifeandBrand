@@ -2,8 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from datetime import datetime
+from app.auth.dependencies import get_current_user
 from app.db.database import get_db
 from app.models.supplier import Supplier, SupplierItem
+from app.models.user import User
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
@@ -36,7 +38,11 @@ class SupplierOut(BaseModel):
 
 
 @router.get("/", response_model=list[SupplierOut])
-def list_suppliers(active_only: bool = True, db: Session = Depends(get_db)):
+def list_suppliers(
+    active_only: bool = True,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     q = db.query(Supplier)
     if active_only:
         q = q.filter(Supplier.is_active == True)
@@ -44,7 +50,11 @@ def list_suppliers(active_only: bool = True, db: Session = Depends(get_db)):
 
 
 @router.post("/", response_model=SupplierOut, status_code=201)
-def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db)):
+def create_supplier(
+    payload: SupplierCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     if db.query(Supplier).filter(Supplier.code == payload.code).first():
         raise HTTPException(400, f"Supplier code '{payload.code}' already exists")
     supplier = Supplier(**payload.model_dump())
@@ -55,7 +65,11 @@ def create_supplier(payload: SupplierCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{supplier_id}", response_model=SupplierOut)
-def get_supplier(supplier_id: int, db: Session = Depends(get_db)):
+def get_supplier(
+    supplier_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     supplier = db.get(Supplier, supplier_id)
     if not supplier:
         raise HTTPException(404, "Supplier not found")
@@ -86,12 +100,21 @@ class SupplierItemOut(BaseModel):
 
 
 @router.get("/{supplier_id}/items", response_model=list[SupplierItemOut])
-def list_supplier_items(supplier_id: int, db: Session = Depends(get_db)):
+def list_supplier_items(
+    supplier_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     return db.query(SupplierItem).filter(SupplierItem.supplier_id == supplier_id).all()
 
 
 @router.post("/{supplier_id}/items", response_model=SupplierItemOut, status_code=201)
-def add_supplier_item(supplier_id: int, payload: SupplierItemCreate, db: Session = Depends(get_db)):
+def add_supplier_item(
+    supplier_id: int,
+    payload: SupplierItemCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
     if not db.get(Supplier, supplier_id):
         raise HTTPException(404, "Supplier not found")
     si = SupplierItem(supplier_id=supplier_id, **payload.model_dump())

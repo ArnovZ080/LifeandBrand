@@ -2,11 +2,14 @@ from datetime import datetime, date as date_type
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from app.auth.dependencies import ensure_unit_visible, get_current_user, get_subtree_ids
 from app.db.database import get_db
 from app.models.delivery import Delivery, DeliveryLine, DeliveryStatus
+from app.models.purchase_order import PurchaseOrder
 from app.models.stock import StockMovement, MovementType
 from app.models.batch import ItemBatch, BatchStatus
 from app.models.item import Item
+from app.models.user import User
 
 router = APIRouter(prefix="/deliveries", tags=["deliveries"])
 
@@ -70,15 +73,33 @@ def _next_grn(db: Session) -> str:
 
 
 @router.get("/", response_model=list[DeliveryOut])
-def list_deliveries(location_id: int | None = None, db: Session = Depends(get_db)):
-    q = db.query(Delivery)
+def list_deliveries(
+    location_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if location_id:
+        ensure_unit_visible(db, current_user, location_id)
+    allowed = get_subtree_ids(db, current_user.org_unit_id)
+    q = db.query(Delivery).filter(Delivery.location_id.in_(allowed))
     if location_id:
         q = q.filter(Delivery.location_id == location_id)
     return q.order_by(Delivery.delivery_date.desc()).all()
 
 
 @router.post("/", response_model=DeliveryOut, status_code=201)
-def create_delivery(payload: DeliveryCreate, db: Session = Depends(get_db)):
+def create_delivery(
+    payload: DeliveryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_unit_visible(db, current_user, payload.location_id)
+    if payload.purchase_order_id is not None:
+        # A delivery may only be booked against a purchase order at a site the caller covers.
+        po = db.get(PurchaseOrder, payload.purchase_order_id)
+        if po is None:
+            raise HTTPException(404, "Purchase order not found")
+        ensure_unit_visible(db, current_user, po.location_id, detail="Purchase order not found")
     delivery = Delivery(
         grn_number=_next_grn(db),
         purchase_order_id=payload.purchase_order_id,
@@ -99,7 +120,12 @@ def create_delivery(payload: DeliveryCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/{delivery_id}/accept", response_model=DeliveryOut)
-def accept_delivery(delivery_id: int, accepted_by: str, db: Session = Depends(get_db)):
+def accept_delivery(
+    delivery_id: int,
+    accepted_by: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Accept a delivery:
     1. Posts stock movements to the ledger (increases theoretical stock).
@@ -109,6 +135,7 @@ def accept_delivery(delivery_id: int, accepted_by: str, db: Session = Depends(ge
     delivery = db.get(Delivery, delivery_id)
     if not delivery:
         raise HTTPException(404, "Delivery not found")
+    ensure_unit_visible(db, current_user, delivery.location_id, detail="Delivery not found")
     if delivery.status == DeliveryStatus.ACCEPTED:
         raise HTTPException(400, "Delivery already accepted")
 

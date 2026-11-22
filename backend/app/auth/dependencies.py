@@ -40,6 +40,12 @@ def get_subtree_ids(db: Session, root_org_unit_id: int) -> list[int]:
     return [row[0] for row in result]
 
 
+def ensure_unit_visible(db: Session, user: User, org_unit_id: int, *, detail: str = "Not found") -> None:
+    """404 unless org_unit_id is in the caller's subtree. Out-of-scope units look like missing ones."""
+    if org_unit_id not in get_subtree_ids(db, user.org_unit_id):
+        raise HTTPException(status_code=404, detail=detail)
+
+
 def get_accessible_org_unit_ids(
     requested_org_unit_id: int | None = None,
     current_user: User = Depends(get_current_user),

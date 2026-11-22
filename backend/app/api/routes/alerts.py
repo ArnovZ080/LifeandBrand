@@ -3,9 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
+from app.auth.dependencies import ensure_unit_visible, get_current_user, get_subtree_ids
 from app.db.database import get_db
 from app.models.contact import LocationContact, NotificationChannel
 from app.models.alert import ExpiryAlert, AlertStatus
+from app.models.user import User
 from app.services.alert_engine import run_alert_check, AlertResult
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -73,7 +75,12 @@ class TriggerResult(BaseModel):
 # ── Contact management ─────────────────────────────────────────────────────────
 
 @router.get("/contacts", response_model=list[ContactOut])
-def list_contacts(location_id: int, db: Session = Depends(get_db)):
+def list_contacts(
+    location_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_unit_visible(db, current_user, location_id)
     return (
         db.query(LocationContact)
         .filter(LocationContact.location_id == location_id, LocationContact.is_active == True)
@@ -83,7 +90,12 @@ def list_contacts(location_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/contacts", response_model=ContactOut, status_code=201)
-def create_contact(payload: ContactCreate, db: Session = Depends(get_db)):
+def create_contact(
+    payload: ContactCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_unit_visible(db, current_user, payload.location_id)
     if not any([payload.email, payload.whatsapp_number, payload.teams_webhook_url]):
         raise HTTPException(400, "At least one contact channel (email, WhatsApp, or Teams) is required")
     contact = LocationContact(**payload.model_dump())
@@ -94,10 +106,18 @@ def create_contact(payload: ContactCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/contacts/{contact_id}", response_model=ContactOut)
-def update_contact(contact_id: int, payload: ContactCreate, db: Session = Depends(get_db)):
+def update_contact(
+    contact_id: int,
+    payload: ContactCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     contact = db.get(LocationContact, contact_id)
     if not contact:
         raise HTTPException(404, "Contact not found")
+    ensure_unit_visible(db, current_user, contact.location_id, detail="Contact not found")
+    # The body may not move a contact to another site.
+    ensure_unit_visible(db, current_user, payload.location_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(contact, field, value)
     db.commit()
@@ -106,10 +126,15 @@ def update_contact(contact_id: int, payload: ContactCreate, db: Session = Depend
 
 
 @router.delete("/contacts/{contact_id}", status_code=204)
-def deactivate_contact(contact_id: int, db: Session = Depends(get_db)):
+def deactivate_contact(
+    contact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     contact = db.get(LocationContact, contact_id)
     if not contact:
         raise HTTPException(404, "Contact not found")
+    ensure_unit_visible(db, current_user, contact.location_id, detail="Contact not found")
     contact.is_active = False
     db.commit()
 
@@ -117,13 +142,24 @@ def deactivate_contact(contact_id: int, db: Session = Depends(get_db)):
 # ── Alert trigger ──────────────────────────────────────────────────────────────
 
 @router.post("/trigger", response_model=TriggerResult)
-def trigger_alerts(location_id: int | None = None, db: Session = Depends(get_db)):
+def trigger_alerts(
+    location_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """
     Run the expiry alert check and send notifications.
     Call this at shift start via cron (e.g. 06:30 and 14:00 daily).
     Can also be triggered manually from the dashboard.
     """
-    results = run_alert_check(db, location_id=location_id)
+    if location_id is not None:
+        ensure_unit_visible(db, current_user, location_id)
+        results = run_alert_check(db, location_id=location_id)
+    else:
+        # No site given: run for each unit in the caller's subtree only.
+        results = []
+        for unit_id in get_subtree_ids(db, current_user.org_unit_id):
+            results.extend(run_alert_check(db, location_id=unit_id))
     sent = [r for r in results if r.status == "sent"]
     failed = [r for r in results if r.status == "failed"]
     suppressed = [r for r in results if r.status == "suppressed"]
@@ -152,8 +188,10 @@ def get_alert_history(
     location_id: int,
     days: int = 7,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     from datetime import timedelta
+    ensure_unit_visible(db, current_user, location_id)
     since = datetime.utcnow() - timedelta(days=days)
     rows = (
         db.query(ExpiryAlert)

@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.connectors.micros_adapter import MicrosExportAdapter
+from app.auth.dependencies import get_current_user
 from app.db.database import get_db
 from app.models import RawIngest
+from app.models.user import User
 from app.services.ingest_pipeline import known_hashes, run_pipeline
 
 router = APIRouter(prefix="/ingest", tags=["ingest"])
@@ -46,7 +48,7 @@ class IngestOut(BaseModel):
 
 
 @router.post("/run", response_model=list[RunResultOut])
-def run(payload: RunIn, db: Session = Depends(get_db)):
+def run(payload: RunIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """Run the 5-stage pipeline for a source. Cron target / manual trigger."""
     adapter_cls = ADAPTERS.get(payload.source)
     if adapter_cls is None:
@@ -58,7 +60,7 @@ def run(payload: RunIn, db: Session = Depends(get_db)):
 
 
 @router.get("/", response_model=list[IngestOut])
-def recent(limit: int = 50, db: Session = Depends(get_db)):
+def recent(limit: int = 50, db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     rows = db.execute(
         select(RawIngest).order_by(RawIngest.created_at.desc()).limit(min(limit, 200))
     ).scalars().all()

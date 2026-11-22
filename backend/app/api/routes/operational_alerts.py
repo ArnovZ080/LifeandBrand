@@ -9,7 +9,7 @@ from app.models.operational_alert import (
     OpsAlert, OpsAlertState, OpsAlertType, EscalationEvent, EscalationAction,
     ThresholdConfig, ThresholdDirection,
 )
-from app.auth.dependencies import get_current_user, get_accessible_org_unit_ids
+from app.auth.dependencies import ensure_unit_visible, get_current_user, get_accessible_org_unit_ids, get_subtree_ids
 from app.services.escalation_engine import check_escalations
 from app.services import audit_service
 from app.services.threshold_resolver import set_threshold, get_effective_threshold, ThresholdConflict
@@ -76,6 +76,19 @@ def _alert_out(a: OpsAlert) -> AlertOut:
     )
 
 
+def _user_tier(user: User) -> str:
+    return user.role.value.replace("_manager", "").replace("_ops", "")
+
+
+def _ensure_alert_visible(db: Session, alert: OpsAlert, user: User) -> None:
+    """Same visibility as the list: the caller's subtree, or an alert escalated to the caller's tier."""
+    if alert.org_unit_id in get_subtree_ids(db, user.org_unit_id):
+        return
+    if _user_tier(user) in (alert.visible_tiers or ""):
+        return
+    raise HTTPException(404, "Alert not found")
+
+
 @router.get("/", response_model=list[AlertOut])
 def list_alerts(
     state: str | None = None,
@@ -84,13 +97,12 @@ def list_alerts(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from app.auth.dependencies import get_subtree_ids
     allowed_ids = get_subtree_ids(db, current_user.org_unit_id)
 
     # Visible-tiers filter: include alerts whose visible_tiers include any tier
     # the current user's role would see. Simplified: include all in subtree
     # plus any escalated to the user's tier.
-    user_tier = current_user.role.value.replace("_manager", "").replace("_ops", "")
+    user_tier = _user_tier(current_user)
 
     q = (
         db.query(OpsAlert)
@@ -135,6 +147,7 @@ def acknowledge(alert_id: int, current_user: User = Depends(get_current_user), d
     alert = db.get(OpsAlert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
+    _ensure_alert_visible(db, alert, current_user)
     before = audit_service.model_snapshot(alert)
     return _transition(alert, OpsAlertState.ACKNOWLEDGED, EscalationAction.ACKNOWLEDGED, current_user, None, db,
                        before=before, audit_action="acknowledge",
@@ -146,6 +159,7 @@ def resolve(alert_id: int, current_user: User = Depends(get_current_user), db: S
     alert = db.get(OpsAlert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
+    _ensure_alert_visible(db, alert, current_user)
     before = audit_service.model_snapshot(alert)
     return _transition(alert, OpsAlertState.RESOLVED, EscalationAction.RESOLVED, current_user, None, db,
                        before=before, audit_action="resolve",
@@ -158,6 +172,7 @@ def escalate(alert_id: int, current_user: User = Depends(get_current_user), db: 
     alert = db.get(OpsAlert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
+    _ensure_alert_visible(db, alert, current_user)
     before = audit_service.model_snapshot(alert)
     current_tiers = [t.strip() for t in alert.visible_tiers.split(",") if t.strip()]
     next_tier = _next_tier(current_tiers)
@@ -173,6 +188,7 @@ def dismiss(alert_id: int, current_user: User = Depends(get_current_user), db: S
     alert = db.get(OpsAlert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
+    _ensure_alert_visible(db, alert, current_user)
     before = audit_service.model_snapshot(alert)
     return _transition(alert, OpsAlertState.RESOLVED, EscalationAction.DISMISSED_NOT_USEFUL, current_user,
                        "Dismissed as not useful", db, before=before, audit_action="dismiss",
@@ -180,7 +196,7 @@ def dismiss(alert_id: int, current_user: User = Depends(get_current_user), db: S
 
 
 @router.post("/check-escalations")
-def run_escalations(db: Session = Depends(get_db)):
+def run_escalations(db: Session = Depends(get_db), _: User = Depends(get_current_user)):
     """Cron target — call hourly."""
     escalated = check_escalations(db)
     return {"escalated": len(escalated)}
@@ -193,9 +209,13 @@ def list_thresholds(
     kpi_type: str | None = None,
     org_unit_id: int | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    q = db.query(ThresholdConfig)
+    if org_unit_id:
+        ensure_unit_visible(db, current_user, org_unit_id)
+    q = db.query(ThresholdConfig).filter(
+        ThresholdConfig.org_unit_id.in_(get_subtree_ids(db, current_user.org_unit_id))
+    )
     if kpi_type:
         q = q.filter(ThresholdConfig.kpi_type == kpi_type)
     if org_unit_id:
@@ -208,8 +228,9 @@ def effective_threshold(
     kpi_type: str,
     org_unit_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    ensure_unit_visible(db, current_user, org_unit_id)
     cfg = get_effective_threshold(db, kpi_type, org_unit_id)
     if not cfg:
         raise HTTPException(404, "No threshold configured for this KPI and org unit")
@@ -226,6 +247,7 @@ def upsert_threshold(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    ensure_unit_visible(db, current_user, payload.org_unit_id)
     try:
         cfg = set_threshold(
             db=db,

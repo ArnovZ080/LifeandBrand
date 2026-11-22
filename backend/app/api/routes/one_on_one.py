@@ -3,8 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 from app.db.database import get_db
 from app.models.one_on_one import OneOnOneMeeting
+from app.models.user import User
 from app.services import audit_service
 
 router = APIRouter(prefix="/am/one-on-ones", tags=["area-manager"])
@@ -63,7 +65,13 @@ class OneOnOneSummary(BaseModel):
 
 
 @router.get("/", response_model=list[OneOnOneSummary])
-def list_meetings(location_id: int, limit: int = 50, db: Session = Depends(get_db)):
+def list_meetings(
+    location_id: int,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_unit_visible(db, current_user, location_id)
     return (
         db.query(OneOnOneMeeting)
         .filter(OneOnOneMeeting.location_id == location_id)
@@ -74,13 +82,18 @@ def list_meetings(location_id: int, limit: int = 50, db: Session = Depends(get_d
 
 
 @router.post("/", response_model=OneOnOneOut, status_code=201)
-def create_meeting(payload: OneOnOneCreate, db: Session = Depends(get_db)):
+def create_meeting(
+    payload: OneOnOneCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ensure_unit_visible(db, current_user, payload.location_id)
     meeting = OneOnOneMeeting(**payload.model_dump())
     db.add(meeting)
     db.flush()
     # Meeting answers are HR content and are not copied into the audit log.
     audit_service.record(
-        db, actor=None, actor_name=payload.area_manager_name, entity_type="one_on_one_meeting",
+        db, actor=current_user, actor_name=payload.area_manager_name, entity_type="one_on_one_meeting",
         entity_id=meeting.id, action="create", org_unit_id=payload.location_id,
         summary=f"Recorded one-on-one on {payload.meeting_date.isoformat()} (content not copied)",
     )
@@ -90,8 +103,13 @@ def create_meeting(payload: OneOnOneCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{meeting_id}", response_model=OneOnOneOut)
-def get_meeting(meeting_id: int, db: Session = Depends(get_db)):
+def get_meeting(
+    meeting_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     meeting = db.get(OneOnOneMeeting, meeting_id)
     if not meeting:
         raise HTTPException(404, "Meeting not found")
+    ensure_unit_visible(db, current_user, meeting.location_id, detail="Meeting not found")
     return meeting

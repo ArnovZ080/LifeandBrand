@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_accessible_org_unit_ids, get_current_user
+from app.auth.dependencies import get_accessible_org_unit_ids, get_current_user, get_subtree_ids
 from app.db.database import get_db
 from app.models.stock_count import CountTemplate, StockCount, StockCountLine, StockCountStatus
 from app.models.user import User
@@ -171,6 +171,8 @@ def create_count_template(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if payload.org_unit_id is not None:
+        _require_site_access(payload.org_unit_id, current_user, db)
     try:
         template = create_template(db, name=payload.name, item_ids=payload.item_ids,
                                    org_unit_id=payload.org_unit_id, actor=current_user)
@@ -183,12 +185,17 @@ def create_count_template(
 def list_count_templates(
     org_unit_id: int | None = None,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     q = db.query(CountTemplate)
     if org_unit_id is not None:
+        _require_site_access(org_unit_id, current_user, db)
         # Site-specific templates for this site, plus all-sites templates (null)
         q = q.filter((CountTemplate.org_unit_id == org_unit_id) | (CountTemplate.org_unit_id.is_(None)))
+    else:
+        # No site asked for: keep to the caller's subtree, plus all-sites templates (null)
+        allowed = get_subtree_ids(db, current_user.org_unit_id)
+        q = q.filter((CountTemplate.org_unit_id.in_(allowed)) | (CountTemplate.org_unit_id.is_(None)))
     return [_template_out(t) for t in q.order_by(CountTemplate.name).all()]
 
 
@@ -228,6 +235,7 @@ def open_stock_count(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    _require_site_access(payload.org_unit_id, current_user, db)
     try:
         count = create_count(
             db,
@@ -252,8 +260,9 @@ def get_count_variance_summary(
     date_from: date,
     date_to: date,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    _require_site_access(org_unit_id, current_user, db)
     if date_to < date_from:
         raise HTTPException(400, "date_to must be on or after date_from")
     result = count_variance_summary(db, org_unit_id, date_from, date_to)
@@ -276,9 +285,11 @@ def get_count_variance_summary(
 def get_stock_count(
     stock_count_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
-    return _count_out(_load_count(db, stock_count_id))
+    count = _load_count(db, stock_count_id)
+    _require_site_access(count.org_unit_id, current_user, db)
+    return _count_out(count)
 
 
 @router.put("/{stock_count_id}/lines", response_model=CountOut)
@@ -288,7 +299,8 @@ def record_stock_count_lines(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _load_count(db, stock_count_id)
+    count_row = _load_count(db, stock_count_id)
+    _require_site_access(count_row.org_unit_id, current_user, db)
     try:
         count = record_counts(db, stock_count_id, [line.model_dump() for line in lines], actor=current_user)
     except (LookupError, ValueError) as exc:
@@ -302,7 +314,8 @@ def submit_stock_count(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _load_count(db, stock_count_id)
+    count_row = _load_count(db, stock_count_id)
+    _require_site_access(count_row.org_unit_id, current_user, db)
     try:
         count = submit_count(db, stock_count_id, actor=current_user)
     except (LookupError, ValueError) as exc:

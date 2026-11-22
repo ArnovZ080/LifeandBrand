@@ -8,9 +8,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, get_subtree_ids
 from app.db.database import get_db
 from app.models.approval import ApprovalRule, ApprovalSubject
 from app.models.user import User
@@ -99,7 +100,11 @@ def list_rules(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    query = db.query(ApprovalRule)
+    # Global rules (null unit) apply to every site; unit rules only to the caller's subtree.
+    allowed = get_subtree_ids(db, current_user.org_unit_id)
+    query = db.query(ApprovalRule).filter(
+        or_(ApprovalRule.org_unit_id.is_(None), ApprovalRule.org_unit_id.in_(allowed))
+    )
     if subject is not None:
         query = query.filter(ApprovalRule.subject == subject)
     if active is not None:

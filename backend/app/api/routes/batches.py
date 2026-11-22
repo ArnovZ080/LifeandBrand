@@ -7,8 +7,10 @@ from datetime import date
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 from app.db.database import get_db
 from app.models.batch import ItemBatch, BatchStatus
+from app.models.user import User
 
 router = APIRouter(prefix="/batches", tags=["batches"])
 
@@ -61,11 +63,13 @@ def get_expiring_batches(
     location_id: int,
     within_days: int = 2,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Returns all active batches expiring within `within_days` days (default 2).
     This is the daily freshness alert list — check at shift start.
     """
+    ensure_unit_visible(db, current_user, location_id)
     from datetime import timedelta
     cutoff = date.today() + timedelta(days=within_days)
     batches = (
@@ -91,8 +95,10 @@ def get_active_batches(
     location_id: int,
     item_id: int | None = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """All active batches at a location, optionally filtered by item."""
+    ensure_unit_visible(db, current_user, location_id)
     q = db.query(ItemBatch).filter(
         ItemBatch.location_id == location_id,
         ItemBatch.status.in_([BatchStatus.ACTIVE, BatchStatus.EXPIRING_SOON]),

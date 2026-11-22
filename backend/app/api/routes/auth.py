@@ -7,7 +7,7 @@ from app.db.database import get_db
 from app.models.user import User, UserRole
 from app.models.location import OrgUnit, OrgTier
 from app.auth.security import verify_password, hash_password, create_access_token
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 from app.services import audit_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -74,6 +74,7 @@ def create_user(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    ensure_unit_visible(db, current_user, payload.org_unit_id)
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(400, "Email already registered")
     user = User(

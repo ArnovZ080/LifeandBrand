@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import ensure_unit_visible, get_current_user
 from app.db.database import get_db
 from app.models import Item
 from app.models.cos_flag import CosDismissal, CosFlag
@@ -70,8 +70,9 @@ def variance(
     org_unit_id: int,
     period: str,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
+    ensure_unit_visible(db, current_user, org_unit_id)
     if not PERIOD_RE.match(period):
         raise HTTPException(400, "period must be YYYY-MM")
     result = compute_variance(db, org_unit_id, period)
@@ -96,6 +97,7 @@ def dismiss_flag(
     flag = db.get(CosFlag, flag_id)
     if flag is None:
         raise HTTPException(404, "Flag not found")
+    ensure_unit_visible(db, current_user, flag.org_unit_id, detail="Flag not found")
     if not payload.reason.strip():
         raise HTTPException(400, "A dismissal reason is required")
     before = audit_service.model_snapshot(flag)

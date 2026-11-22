@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
+from app.auth.dependencies import get_current_user
+from app.models.user import User
 from app.services.invoice_ocr import extract_invoice, InvoiceExtraction, ExtractedLine
 
 router = APIRouter(prefix="/invoice-ocr", tags=["invoice-ocr"])
@@ -31,7 +33,7 @@ class InvoiceExtractionOut(BaseModel):
 
 
 @router.post("/extract", response_model=InvoiceExtractionOut)
-async def extract(file: UploadFile = File(...)):
+async def extract(file: UploadFile = File(...), _: User = Depends(get_current_user)):
     """
     Upload an invoice image (JPEG, PNG, WEBP) and receive structured extraction.
     The result pre-populates the invoice capture form — a human must review and confirm.
