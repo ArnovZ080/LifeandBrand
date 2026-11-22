@@ -9,8 +9,9 @@ Rule-based reordering, separate from the forecast and predictive ordering code.
                     rounded up to a whole pack and grouped by the item's
                     preferred supplier. Items with no preferred supplier are
                     listed as unassigned and are not ordered.
-  create_draft_requisitions -> one DRAFT requisition per supplier group through
-                    requisition_service.create_draft. Nothing is submitted here.
+  create_draft_requisitions -> one DRAFT requisition per supplier group, staged with
+                    requisition_service.stage_draft in a single transaction (all or
+                    nothing). Nothing is submitted here.
 
 Pack size: the preferred SupplierItem's pack size when it is set and above zero,
 else Item.pack_size, else 1.
@@ -316,31 +317,43 @@ def shopping_list(db: Session, org_unit_id: int) -> ShoppingList:
 
 
 def create_draft_requisitions(db: Session, org_unit_id: int, user: User) -> list[Requisition]:
-    """One DRAFT requisition per supplier group. Never submits."""
+    """One DRAFT requisition per supplier group, all in one transaction. Never submits.
+
+    Either every group becomes a draft and the shopping-list audit row is written, or
+    nothing is written: any failure rolls the whole batch back and is re-raised. A lost
+    race on a requisition number is raised as ConflictError.
+    """
     _site(db, org_unit_id)
     current = shopping_list(db, org_unit_id)
     if not current.groups:
         raise ConflictError("Nothing to order: the shopping list has no orderable lines")
 
-    requisitions: list[Requisition] = []
-    for group in current.groups:
-        requisitions.append(requisition_service.create_draft(
-            db,
-            org_unit_id=org_unit_id,
-            lines=[LineSpec(item_id=l.item_id, quantity=l.order_qty) for l in group.lines],
-            supplier_id=group.supplier_id,
-            notes="Created from shopping list",
-            requested_by=user.name,
-            actor=user,
-        ))
-
-    numbers = [r.requisition_number for r in requisitions]
-    audit_service.record(
-        db, actor=user, entity_type=SHOPPING_ENTITY, entity_id=org_unit_id, action="create_drafts",
-        org_unit_id=org_unit_id, after={"requisitions": numbers},
-        summary=f"Created {len(numbers)} draft requisition(s) from shopping list: {', '.join(numbers)}",
-    )
-    _commit(db)
+    try:
+        requisitions = [
+            requisition_service.stage_draft(
+                db,
+                org_unit_id=org_unit_id,
+                lines=[LineSpec(item_id=l.item_id, quantity=l.order_qty) for l in group.lines],
+                supplier_id=group.supplier_id,
+                notes="Created from shopping list",
+                requested_by=user.name,
+                actor=user,
+            )
+            for group in current.groups
+        ]
+        numbers = [r.requisition_number for r in requisitions]
+        audit_service.record(
+            db, actor=user, entity_type=SHOPPING_ENTITY, entity_id=org_unit_id, action="create_drafts",
+            org_unit_id=org_unit_id, after={"requisitions": numbers},
+            summary=f"Created {len(numbers)} draft requisition(s) from shopping list: {', '.join(numbers)}",
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError("Conflicting record was written concurrently; please retry") from exc
+    except Exception:
+        db.rollback()
+        raise
     for r in requisitions:
         db.refresh(r)
     return requisitions

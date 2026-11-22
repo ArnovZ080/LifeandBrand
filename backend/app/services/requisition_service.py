@@ -101,7 +101,7 @@ def _build_lines(lines: list[LineSpec]) -> list[RequisitionLine]:
     ]
 
 
-def create_draft(
+def stage_draft(
     db: Session,
     *,
     org_unit_id: int,
@@ -112,6 +112,11 @@ def create_draft(
     requested_by: str,
     actor: User | None = None,
 ) -> Requisition:
+    """Validate and stage one DRAFT requisition with its create audit row.
+
+    Flushes, so a later number lookup in the same transaction sees this requisition,
+    but never commits. The caller owns the transaction and must commit or roll back.
+    """
     if db.get(OrgUnit, org_unit_id) is None:
         raise LookupError(f"Org unit {org_unit_id} not found")
     _check_supplier(db, supplier_id)
@@ -129,17 +134,37 @@ def create_draft(
         lines=_build_lines(lines),
     )
     db.add(requisition)
+    db.flush()
+    audit_service.record(
+        db, actor=actor, actor_name=requested_by, entity_type="requisition",
+        entity_id=requisition.id, action="create", org_unit_id=org_unit_id,
+        after=_requisition_snapshot(requisition),
+        summary=f"Created draft requisition {requisition.requisition_number}",
+    )
+    return requisition
 
-    def audit() -> None:
-        db.flush()
-        audit_service.record(
-            db, actor=actor, actor_name=requested_by, entity_type="requisition",
-            entity_id=requisition.id, action="create", org_unit_id=org_unit_id,
-            after=_requisition_snapshot(requisition),
-            summary=f"Created draft requisition {requisition.requisition_number}",
-        )
 
-    _commit(db, audit)
+def create_draft(
+    db: Session,
+    *,
+    org_unit_id: int,
+    lines: list[LineSpec],
+    supplier_id: int | None = None,
+    needed_by: date | None = None,
+    notes: str | None = None,
+    requested_by: str,
+    actor: User | None = None,
+) -> Requisition:
+    requisition = _commit_staged(db, lambda: stage_draft(
+        db,
+        org_unit_id=org_unit_id,
+        lines=lines,
+        supplier_id=supplier_id,
+        needed_by=needed_by,
+        notes=notes,
+        requested_by=requested_by,
+        actor=actor,
+    ))
     db.refresh(requisition)
     return requisition
 
@@ -384,3 +409,18 @@ def _commit(db: Session, before_commit=None) -> None:
     except IntegrityError as exc:
         db.rollback()
         raise ConflictError("Conflicting record was created concurrently; please retry") from exc
+
+
+def _commit_staged(db: Session, stage):
+    """Call stage() (which stages and flushes), then commit once and return its result.
+
+    Same conflict mapping as _commit. Other failures are raised without a rollback,
+    as before; callers that need all-or-nothing across several stages manage that themselves.
+    """
+    try:
+        result = stage()
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise ConflictError("Conflicting record was created concurrently; please retry") from exc
+    return result
