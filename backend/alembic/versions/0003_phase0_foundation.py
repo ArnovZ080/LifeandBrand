@@ -49,11 +49,6 @@ def upgrade() -> None:
         sa.Column("notes", sa.Text, nullable=True),
         sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
     )
-    op.create_index(
-        "ix_ledger_entries_metric_unit_period",
-        "ledger_entries",
-        ["metric_id", "org_unit_id", "period_date"],
-    )
 
     # ── Autonomy Ladder ───────────────────────────────────────────────────────
     op.create_table(
@@ -74,7 +69,7 @@ def upgrade() -> None:
         sa.Column("org_unit_id", sa.Integer, sa.ForeignKey("org_units.id"), nullable=True),
         sa.Column(
             "event_kind",
-            sa.Enum("clean_run", "edit", "veto", "reversal", "promotion", "demotion",
+            sa.Enum("CLEAN_RUN", "EDIT", "VETO", "REVERSAL", "PROMOTION", "DEMOTION",
                     name="autonomyeventkind"),
             nullable=False,
         ),
@@ -99,7 +94,6 @@ def upgrade() -> None:
         sa.Column("source", sa.String(50), nullable=False, server_default="manual"),
         sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
     )
-    op.create_index("ix_vpc_item_supplier", "vendor_price_catalogue", ["item_id", "supplier_id"])
 
     # ── Budgets ───────────────────────────────────────────────────────────────
     op.create_table(
@@ -126,10 +120,10 @@ def upgrade() -> None:
         sa.Column("business_date", sa.Date, nullable=True),
         sa.Column(
             "stage",
-            sa.Enum("landed", "staged", "normalised", "reconciled", "served", "failed",
+            sa.Enum("LANDED", "STAGED", "NORMALISED", "RECONCILED", "SERVED", "FAILED",
                     name="ingeststage"),
             nullable=False,
-            server_default="landed",
+            server_default="LANDED",
         ),
         sa.Column("payload", sa.JSON, nullable=True),
         sa.Column("row_count", sa.Integer, nullable=True),
@@ -137,7 +131,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
     )
-    op.create_index("ix_raw_ingests_stage", "raw_ingests", ["stage"])
 
     # ── Recipe validity dates ─────────────────────────────────────────────────
     op.add_column("recipe_lines", sa.Column("valid_from", sa.Date, nullable=True))
@@ -147,16 +140,13 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_column("recipe_lines", "valid_to")
     op.drop_column("recipe_lines", "valid_from")
-    op.drop_index("ix_raw_ingests_stage", "raw_ingests")
     op.drop_table("raw_ingests")
     op.execute("DROP TYPE IF EXISTS ingeststage")
     op.drop_table("budgets")
-    op.drop_index("ix_vpc_item_supplier", "vendor_price_catalogue")
     op.drop_table("vendor_price_catalogue")
     op.drop_table("autonomy_events")
     op.execute("DROP TYPE IF EXISTS autonomyeventkind")
     op.drop_table("autonomy_action_types")
-    op.drop_index("ix_ledger_entries_metric_unit_period", "ledger_entries")
     op.drop_table("ledger_entries")
     op.drop_table("ledger_metrics")
     op.drop_column("org_units", "tenant_id")

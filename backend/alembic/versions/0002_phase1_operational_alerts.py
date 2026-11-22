@@ -33,14 +33,13 @@ def upgrade() -> None:
         sa.Column("value", sa.Numeric(10, 4), nullable=False),
         sa.Column(
             "direction",
-            sa.Enum("lower_is_better", "higher_is_better", "target_band", name="thresholddirection"),
+            sa.Enum("LOWER_IS_BETTER", "HIGHER_IS_BETTER", "TARGET_BAND", name="thresholddirection"),
             nullable=False,
         ),
         sa.Column("set_by_user_id", sa.Integer, sa.ForeignKey("users.id"), nullable=True),
         sa.Column("set_at", sa.DateTime, nullable=False, server_default=sa.func.now()),
         sa.Column("learned_adjustment", sa.Numeric(6, 4), nullable=True),
     )
-    op.create_index("ix_threshold_kpi_unit", "threshold_configs", ["kpi_type", "org_unit_id"], unique=True)
 
     # ── Generalised alerts ────────────────────────────────────────────────────
     op.create_table(
@@ -50,14 +49,14 @@ def upgrade() -> None:
         sa.Column("org_unit_id", sa.Integer, sa.ForeignKey("org_units.id"), nullable=False),
         sa.Column(
             "severity",
-            sa.Enum("low", "medium", "high", "critical", name="opsseverity"),
+            sa.Enum("LOW", "MEDIUM", "HIGH", "CRITICAL", name="opsseverity"),
             nullable=False,
         ),
         sa.Column(
             "state",
-            sa.Enum("open", "acknowledged", "escalated", "resolved", name="opsalertstate"),
+            sa.Enum("OPEN", "ACKNOWLEDGED", "ESCALATED", "RESOLVED", name="opsalertstate"),
             nullable=False,
-            server_default="open",
+            server_default="OPEN",
         ),
         sa.Column("visible_tiers", sa.String(200), nullable=False, server_default="site"),
         sa.Column("source_event_ref", sa.String(200), nullable=True),
@@ -67,8 +66,6 @@ def upgrade() -> None:
         sa.Column("acknowledged_at", sa.DateTime, nullable=True),
         sa.Column("resolved_at", sa.DateTime, nullable=True),
     )
-    op.create_index("ix_ops_alerts_source_ref", "ops_alerts", ["source_event_ref"])
-    op.create_index("ix_ops_alerts_state", "ops_alerts", ["state"])
 
     # ── Escalation event log ──────────────────────────────────────────────────
     op.create_table(
@@ -77,8 +74,8 @@ def upgrade() -> None:
         sa.Column("alert_id", sa.Integer, sa.ForeignKey("ops_alerts.id"), nullable=False),
         sa.Column(
             "action",
-            sa.Enum("acknowledged", "escalated_manual", "escalated_auto", "resolved",
-                    "dismissed_not_useful", name="escalationaction"),
+            sa.Enum("ACKNOWLEDGED", "ESCALATED_MANUAL", "ESCALATED_AUTO", "RESOLVED",
+                    "DISMISSED_NOT_USEFUL", name="escalationaction"),
             nullable=False,
         ),
         sa.Column("actor_user_id", sa.Integer, sa.ForeignKey("users.id"), nullable=True),
@@ -108,12 +105,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_table("escalation_events")
     op.execute("DROP TYPE IF EXISTS escalationaction")
-    op.drop_index("ix_ops_alerts_state", "ops_alerts")
-    op.drop_index("ix_ops_alerts_source_ref", "ops_alerts")
     op.drop_table("ops_alerts")
     op.execute("DROP TYPE IF EXISTS opsalertstate")
     op.execute("DROP TYPE IF EXISTS opsseverity")
-    op.drop_index("ix_threshold_kpi_unit", "threshold_configs")
     op.drop_table("threshold_configs")
     op.execute("DROP TYPE IF EXISTS thresholddirection")
     op.drop_table("ops_alert_types")
