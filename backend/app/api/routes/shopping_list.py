@@ -27,6 +27,7 @@ class ShoppingLineOut(BaseModel):
     par_qty: float
     reorder_point: float
     order_qty: float
+    on_order_qty: float = 0
     estimated_unit_price: float | None
     estimated_value: float | None
 
@@ -51,6 +52,7 @@ class ShoppingListOut(BaseModel):
                 item_id=l.item_id, item_name=l.item_name, unit=l.unit,
                 on_hand_qty=float(l.on_hand_qty), par_qty=float(l.par_qty),
                 reorder_point=float(l.reorder_point), order_qty=float(l.order_qty),
+                on_order_qty=float(l.on_order_qty),
                 estimated_unit_price=float(l.estimated_unit_price) if l.estimated_unit_price is not None else None,
                 estimated_value=float(l.estimated_value) if l.estimated_value is not None else None,
             )

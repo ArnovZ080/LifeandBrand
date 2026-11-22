@@ -6,7 +6,7 @@ import { useSiteSelection } from "../hooks/useSiteSelection";
 
 interface Line {
   item_id: number; item_name: string; unit: string;
-  on_hand_qty: number; par_qty: number; reorder_point: number; order_qty: number;
+  on_hand_qty: number; on_order_qty: number; par_qty: number; reorder_point: number; order_qty: number;
   estimated_unit_price: number | null; estimated_value: number | null;
 }
 interface Group { supplier_id: number; supplier_name: string; lines: Line[]; total_estimated_value: number; }
@@ -33,6 +33,7 @@ function LinesTable({ lines, showValue = true }: { lines: Line[]; showValue?: bo
           <tr>
             <th>Item</th>
             <th style={th}>On hand</th>
+            <th style={th}>On order</th>
             <th style={th}>Par</th>
             <th style={th}>Order</th>
             {showValue && <th style={th}>Est. value</th>}
@@ -43,6 +44,7 @@ function LinesTable({ lines, showValue = true }: { lines: Line[]; showValue?: bo
             <tr key={l.item_id}>
               <td>{l.item_name} <span style={{ color: "var(--color-text-muted)", fontSize: 12 }}>({l.unit})</span></td>
               <td style={td}>{qty(l.on_hand_qty)}</td>
+              <td style={td}>{qty(l.on_order_qty)}</td>
               <td style={td}>{qty(l.par_qty)}</td>
               <td style={{ ...td, fontWeight: 600 }}>{qty(l.order_qty)}</td>
               {showValue && <td style={td}>{money(l.estimated_value)}</td>}

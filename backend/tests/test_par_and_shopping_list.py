@@ -21,6 +21,8 @@ from app.models.par_level import ParLevel
 from app.models.requisition import Requisition, RequisitionStatus
 from app.models.stock import MovementType, StockMovement
 from app.services.approval_service import ConflictError
+from app.services import requisition_service
+from app.services.requisition_service import LineSpec
 from app.services.par_service import (
     create_draft_requisitions, delete_par, list_pars, shopping_list, upsert_par,
 )
@@ -286,3 +288,93 @@ def test_out_of_scope_user_is_refused_on_another_sites_par_levels(db, world, api
     assert api.delete(f"/api/v1/par-levels/{par.id}").status_code == 403
     db.refresh(par)
     assert par.active is True
+
+
+# ── Stock already on order ────────────────────────────────────────────────────
+
+def _open_draft(db, world, item_key, qty, supplier_key="meat"):
+    return requisition_service.create_draft(
+        db, org_unit_id=world["site_a"].id,
+        lines=[LineSpec(item_id=world[item_key].id, quantity=qty)],
+        supplier_id=world[supplier_key].id, notes="test", requested_by="GM A",
+        actor=world["gm_a"],
+    )
+
+
+def test_open_draft_requisition_counts_as_on_order(db, world):
+    _stock(db, world["site_a"], world["steak"], 0)
+    upsert_par(db, world["site_a"], world["steak"].id, 10, 8, world["gm_a"])
+    _open_draft(db, world, "steak", 6)
+    line = _line(shopping_list(db, world["site_a"].id), world["steak"])
+    assert line.on_order_qty == Decimal("6")
+    assert line.order_qty == Decimal("4")
+
+
+def test_stock_position_above_reorder_point_omits_item(db, world):
+    _stock(db, world["site_a"], world["steak"], 0)
+    upsert_par(db, world["site_a"], world["steak"].id, 10, 4, world["gm_a"])
+    _open_draft(db, world, "steak", 5)  # position 5 > reorder point 4
+    assert _line(shopping_list(db, world["site_a"].id), world["steak"]) is None
+
+
+def test_approved_requisition_counts_as_on_order(db, world):
+    _stock(db, world["site_a"], world["steak"], 0)
+    upsert_par(db, world["site_a"], world["steak"].id, 10, 8, world["gm_a"])
+    req = _open_draft(db, world, "steak", 6)
+    requisition_service.submit(db, req, actor=world["gm_a"])  # no rule: approved directly
+    assert req.status == RequisitionStatus.APPROVED
+    line = _line(shopping_list(db, world["site_a"].id), world["steak"])
+    assert line.on_order_qty == Decimal("6")
+
+
+def test_rejected_requisition_does_not_count_as_on_order(db, world):
+    _stock(db, world["site_a"], world["steak"], 0)
+    upsert_par(db, world["site_a"], world["steak"].id, 10, 2, world["gm_a"])
+    req = _open_draft(db, world, "steak", 6)
+    req.status = RequisitionStatus.REJECTED
+    db.commit()
+    line = _line(shopping_list(db, world["site_a"].id), world["steak"])
+    assert line.on_order_qty == Decimal("0")
+    assert line.order_qty == Decimal("10")
+
+
+def test_converted_requisition_is_not_double_counted_with_its_purchase_order(db, world):
+    _stock(db, world["site_a"], world["steak"], 0)
+    upsert_par(db, world["site_a"], world["steak"].id, 10, 8, world["gm_a"])
+    req = _open_draft(db, world, "steak", 3)
+    requisition_service.submit(db, req, actor=world["gm_a"])
+    requisition_service.convert(db, req, actor=world["gm_a"])
+    line = _line(shopping_list(db, world["site_a"].id), world["steak"])
+    assert line.on_order_qty == Decimal("3")
+
+
+def test_outstanding_part_of_a_sent_purchase_order_counts(db, world):
+    from datetime import date
+    from app.models.purchase_order import POStatus, PurchaseOrder, PurchaseOrderLine
+
+    _stock(db, world["site_a"], world["steak"], 0)
+    upsert_par(db, world["site_a"], world["steak"].id, 10, 8, world["gm_a"])
+    po = PurchaseOrder(po_number="PO-TEST-OUTSTANDING", supplier_id=world["meat"].id,
+                       location_id=world["site_a"].id, status=POStatus.SENT, order_date=date.today())
+    po.lines.append(PurchaseOrderLine(item_id=world["steak"].id, quantity_ordered=10,
+                                      unit_price=50, quantity_received=3))
+    db.add(po)
+    db.commit()
+    line = _line(shopping_list(db, world["site_a"].id), world["steak"])
+    assert line.on_order_qty == Decimal("7")
+    assert line.order_qty == Decimal("3")
+
+
+def test_running_create_drafts_twice_does_not_duplicate_orders(db, world):
+    _stock(db, world["site_a"], world["steak"], 0)
+    _stock(db, world["site_a"], world["lettuce"], 0)
+    upsert_par(db, world["site_a"], world["steak"].id, 10, 2, world["gm_a"])
+    upsert_par(db, world["site_a"], world["lettuce"].id, 12, 2, world["gm_a"])
+
+    first = create_draft_requisitions(db, world["site_a"].id, world["gm_a"])
+    assert len(first) == 2
+    with pytest.raises(ConflictError):
+        create_draft_requisitions(db, world["site_a"].id, world["gm_a"])
+    rows = db.execute(select(Requisition).where(Requisition.org_unit_id == world["site_a"].id)).scalars().all()
+    assert len(rows) == 2
+

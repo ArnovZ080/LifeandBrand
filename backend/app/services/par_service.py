@@ -2,11 +2,13 @@
 
 Rule-based reordering, separate from the forecast and predictive ordering code.
 
-  shopping_list  -> for each active par at a site, when on-hand stock is at or
-                    below the reorder point, the shortfall to par is rounded up
-                    to a whole pack and grouped by the item's preferred supplier.
-                    Items with no preferred supplier are listed as unassigned
-                    and are not ordered.
+  shopping_list  -> for each active par at a site, the stock position is on-hand
+                    plus quantity already on order (open requisitions and the
+                    unreceived part of open purchase orders). When the position
+                    is at or below the reorder point, the shortfall to par is
+                    rounded up to a whole pack and grouped by the item's
+                    preferred supplier. Items with no preferred supplier are
+                    listed as unassigned and are not ordered.
   create_draft_requisitions -> one DRAFT requisition per supplier group through
                     requisition_service.create_draft. Nothing is submitted here.
 
@@ -29,7 +31,8 @@ from sqlalchemy.orm import Session
 
 from app.models import Item, OrgTier, OrgUnit, Supplier, SupplierItem
 from app.models.par_level import ParLevel
-from app.models.requisition import Requisition
+from app.models.purchase_order import POStatus, PurchaseOrder, PurchaseOrderLine
+from app.models.requisition import Requisition, RequisitionLine, RequisitionStatus
 from app.models.user import User
 from app.services import audit_service, requisition_service
 from app.services.approval_service import ConflictError
@@ -54,6 +57,7 @@ class ShoppingLine:
     order_qty: Decimal
     estimated_unit_price: Decimal | None
     estimated_value: Decimal | None
+    on_order_qty: Decimal = ZERO
 
 
 @dataclass
@@ -219,6 +223,45 @@ def _round_up_to_pack(shortfall: Decimal, pack: Decimal) -> Decimal:
     return (multiples * pack).quantize(QTY)
 
 
+OPEN_REQUISITION_STATUSES = (RequisitionStatus.DRAFT, RequisitionStatus.SUBMITTED, RequisitionStatus.APPROVED)
+OPEN_PO_STATUSES = (POStatus.DRAFT, POStatus.SENT, POStatus.PARTIALLY_RECEIVED)
+
+
+def on_order_quantities(db: Session, org_unit_id: int, item_ids: list[int]) -> dict[int, Decimal]:
+    """Quantity already ordered but not yet received, per item, at this site.
+
+    Counts open requisition lines and the outstanding part of open purchase orders.
+    A converted requisition is not counted, because its purchase orders are.
+    """
+    totals: dict[int, Decimal] = {}
+    if not item_ids:
+        return totals
+    requisition_rows = db.execute(
+        select(RequisitionLine.item_id, RequisitionLine.quantity)
+        .join(Requisition, Requisition.id == RequisitionLine.requisition_id)
+        .where(
+            Requisition.org_unit_id == org_unit_id,
+            Requisition.status.in_(OPEN_REQUISITION_STATUSES),
+            RequisitionLine.item_id.in_(item_ids),
+        )
+    ).all()
+    po_rows = db.execute(
+        select(PurchaseOrderLine.item_id, PurchaseOrderLine.quantity_ordered, PurchaseOrderLine.quantity_received)
+        .join(PurchaseOrder, PurchaseOrder.id == PurchaseOrderLine.purchase_order_id)
+        .where(
+            PurchaseOrder.location_id == org_unit_id,
+            PurchaseOrder.status.in_(OPEN_PO_STATUSES),
+            PurchaseOrderLine.item_id.in_(item_ids),
+        )
+    ).all()
+    for item_id, quantity in requisition_rows:
+        totals[item_id] = totals.get(item_id, ZERO) + _dec(quantity)
+    for item_id, ordered, received in po_rows:
+        outstanding = max(ZERO, _dec(ordered) - _dec(received))
+        totals[item_id] = totals.get(item_id, ZERO) + outstanding
+    return totals
+
+
 def shopping_list(db: Session, org_unit_id: int) -> ShoppingList:
     _site(db, org_unit_id)
     rows = db.execute(
@@ -227,19 +270,23 @@ def shopping_list(db: Session, org_unit_id: int) -> ShoppingList:
         .where(ParLevel.org_unit_id == org_unit_id, ParLevel.active.is_(True), Item.is_active.is_(True))
         .order_by(Item.name, ParLevel.id)
     ).all()
-    preferred = _preferred_links(db, [item.id for _, item in rows])
+    item_ids = [item.id for _, item in rows]
+    preferred = _preferred_links(db, item_ids)
+    on_order = on_order_quantities(db, org_unit_id, item_ids)
 
     groups: dict[int, SupplierGroup] = {}
     unassigned: list[ShoppingLine] = []
     for par, item in rows:
         on_hand = _dec(get_theoretical_stock(db, org_unit_id, item.id)).quantize(QTY)
+        ordered = on_order.get(item.id, ZERO).quantize(QTY)
+        position = on_hand + ordered
         reorder = _dec(par.reorder_point)
-        if on_hand > reorder:
+        if position > reorder:
             continue
         par_qty = _dec(par.par_qty)
         link_supplier = preferred.get(item.id)
         link, supplier = link_supplier if link_supplier else (None, None)
-        order_qty = _round_up_to_pack(par_qty - on_hand, _pack_size(link, item))
+        order_qty = _round_up_to_pack(par_qty - position, _pack_size(link, item))
 
         price = requisition_service.current_unit_price(db, org_unit_id, item.id)
         line = ShoppingLine(
@@ -252,6 +299,7 @@ def shopping_list(db: Session, org_unit_id: int) -> ShoppingList:
             order_qty=order_qty,
             estimated_unit_price=price,
             estimated_value=(order_qty * price).quantize(QTY) if price is not None else None,
+            on_order_qty=ordered,
         )
         if supplier is None:
             unassigned.append(line)
