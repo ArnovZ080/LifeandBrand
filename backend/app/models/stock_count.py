@@ -13,6 +13,7 @@ from datetime import datetime, date
 import enum
 from sqlalchemy import (
     String, DateTime, Date, Numeric, ForeignKey, Text, Enum, JSON, Index, UniqueConstraint,
+    Boolean, false,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.database import Base
@@ -52,6 +53,7 @@ class StockCount(Base):
         nullable=False,
         default=StockCountStatus.OPEN,
     )
+    blind: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_by: Mapped[str] = mapped_column(String(100), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     submitted_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)

@@ -14,6 +14,7 @@ import OpsVisitReport from "./pages/OpsVisitReport";
 import OneOnOne from "./pages/OneOnOne";
 import ParLevels from "./pages/ParLevels";
 import ShoppingList from "./pages/ShoppingList";
+import StockCount from "./pages/StockCount";
 import Login from "./pages/Login";
 import { useAuth, ROLES_WITH_MULTI_SITE } from "./contexts/AuthContext";
 import api from "./hooks/useApi";
@@ -25,6 +26,7 @@ const stockNavItems = [
   { to: "/alerts", label: "Freshness Alerts" },
   { to: "/suppliers", label: "Suppliers" },
   { to: "/purchase-orders", label: "Purchase Orders" },
+  { to: "/stock-count", label: "Stock Count" },
   { to: "/par-levels", label: "Par Levels" },
   { to: "/shopping-list", label: "Shopping List" },
   { to: "/deliveries", label: "Deliveries (GRN)" },
@@ -157,6 +159,7 @@ function AppLayout() {
           <Route path="/invoice-ocr" element={<InvoiceOCR />} />
           <Route path="/par-levels" element={<ParLevels />} />
           <Route path="/shopping-list" element={<ShoppingList />} />
+          <Route path="/stock-count" element={<StockCount />} />
           <Route path="/am/operating-structure" element={<AMOperatingStructure />} />
           <Route path="/am/ops-visits" element={<OpsVisitReport />} />
           <Route path="/am/one-on-ones" element={<OneOnOne />} />

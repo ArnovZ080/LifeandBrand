@@ -6,12 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_accessible_org_unit_ids, get_current_user
 from app.db.database import get_db
 from app.models.stock_count import CountTemplate, StockCount, StockCountLine, StockCountStatus
 from app.models.user import User
 from app.services.stock_count_service import (
-    count_variance_summary, create_count, create_template, record_counts, submit_count,
+    count_variance_summary, create_count, create_template, list_counts, record_counts, submit_count,
 )
 
 router = APIRouter(prefix="/stock-counts", tags=["stock-counts"])
@@ -39,6 +39,7 @@ class CountCreateIn(BaseModel):
     count_date: date | None = None
     template_id: int | None = None
     item_ids: list[int] | None = None
+    blind: bool = False
 
 
 class LineCountIn(BaseModel):
@@ -52,11 +53,11 @@ class LineOut(BaseModel):
     id: int
     item_id: int
     item_name: str
-    system_qty: float
+    system_qty: float | None  # null while a blind count is open
     counted_qty: float | None
-    variance_qty: float | None
+    variance_qty: float | None  # null while a blind count is open
     unit_cost: float | None
-    variance_value: float | None
+    variance_value: float | None  # null while a blind count is open
     counted_by: str | None
     counted_at: datetime | None
     notes: str | None
@@ -69,10 +70,22 @@ class CountOut(BaseModel):
     name: str
     count_date: date
     status: StockCountStatus
+    blind: bool
     created_by: str | None
     created_at: datetime
     submitted_at: datetime | None
     lines: list[LineOut]
+
+
+class CountSummaryOut(BaseModel):
+    id: int
+    name: str
+    count_date: date
+    status: StockCountStatus
+    blind: bool
+    template_id: int | None
+    line_count: int
+    counted_count: int
 
 
 class ItemVarianceOut(BaseModel):
@@ -98,17 +111,22 @@ def _template_out(t: CountTemplate) -> TemplateOut:
                        item_ids=list(t.item_ids), created_at=t.created_at)
 
 
-def _line_out(line: StockCountLine) -> LineOut:
+def _hides_expected(count: StockCount) -> bool:
+    """A blind count keeps system quantities and variances back until it is submitted."""
+    return bool(count.blind) and count.status != StockCountStatus.SUBMITTED
+
+
+def _line_out(line: StockCountLine, hide_expected: bool = False) -> LineOut:
     f = lambda v: float(v) if v is not None else None  # noqa: E731
     return LineOut(
         id=line.id,
         item_id=line.item_id,
         item_name=line.item.name if line.item else f"item #{line.item_id}",
-        system_qty=float(line.system_qty),
+        system_qty=None if hide_expected else float(line.system_qty),
         counted_qty=f(line.counted_qty),
-        variance_qty=f(line.variance_qty),
+        variance_qty=None if hide_expected else f(line.variance_qty),
         unit_cost=f(line.unit_cost),
-        variance_value=f(line.variance_value),
+        variance_value=None if hide_expected else f(line.variance_value),
         counted_by=line.counted_by,
         counted_at=line.counted_at,
         notes=line.notes,
@@ -116,6 +134,7 @@ def _line_out(line: StockCountLine) -> LineOut:
 
 
 def _count_out(count: StockCount) -> CountOut:
+    hide = _hides_expected(count)
     return CountOut(
         id=count.id,
         org_unit_id=count.org_unit_id,
@@ -123,10 +142,11 @@ def _count_out(count: StockCount) -> CountOut:
         name=count.name,
         count_date=count.count_date,
         status=count.status,
+        blind=bool(count.blind),
         created_by=count.created_by,
         created_at=count.created_at,
         submitted_at=count.submitted_at,
-        lines=[_line_out(line) for line in count.lines],
+        lines=[_line_out(line, hide_expected=hide) for line in count.lines],
     )
 
 
@@ -174,6 +194,34 @@ def list_count_templates(
 
 # ── Counts ─────────────────────────────────────────────────────────────────────
 
+def _require_site_access(org_unit_id: int, current_user: User, db: Session) -> None:
+    """Out-of-scope sites answer 404, the same as a site that does not exist."""
+    try:
+        get_accessible_org_unit_ids(requested_org_unit_id=org_unit_id, current_user=current_user, db=db)
+    except HTTPException as exc:
+        if exc.status_code == 403:
+            raise HTTPException(404, "Site not found")
+        raise
+
+
+@router.get("/", response_model=list[CountSummaryOut])
+def list_stock_counts(
+    org_unit_id: int,
+    status: StockCountStatus | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _require_site_access(org_unit_id, current_user, db)
+    return [
+        CountSummaryOut(
+            id=count.id, name=count.name, count_date=count.count_date, status=count.status,
+            blind=bool(count.blind), template_id=count.template_id,
+            line_count=lines, counted_count=counted,
+        )
+        for count, lines, counted in list_counts(db, org_unit_id, status)
+    ]
+
+
 @router.post("/", response_model=CountOut, status_code=201)
 def open_stock_count(
     payload: CountCreateIn,
@@ -188,6 +236,7 @@ def open_stock_count(
             count_date=payload.count_date or date.today(),
             template_id=payload.template_id,
             item_ids=payload.item_ids,
+            blind=payload.blind,
             created_by=current_user.email,
             actor=current_user,
         )

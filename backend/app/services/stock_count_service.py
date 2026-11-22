@@ -98,10 +98,12 @@ def create_count(
     count_date: date,
     template_id: int | None = None,
     item_ids: list[int] | None = None,
+    blind: bool = False,
     created_by: str | None = None,
     actor: User | None = None,
 ) -> StockCount:
-    """Open a full count for a site. Give exactly one of template_id or item_ids."""
+    """Open a full count for a site. Give exactly one of template_id or item_ids.
+    A blind count hides system quantities and variances until it is submitted."""
     if (template_id is None) == (item_ids is None):
         raise ValueError("Provide exactly one of template_id or item_ids")
 
@@ -131,6 +133,7 @@ def create_count(
         name=name,
         count_date=count_date,
         status=StockCountStatus.OPEN,
+        blind=blind,
         created_by=created_by,
     )
     db.add(count)
@@ -154,6 +157,30 @@ def create_count(
     db.commit()
     db.refresh(count)
     return count
+
+
+def list_counts(
+    db: Session, org_unit_id: int, status: StockCountStatus | None = None,
+) -> list[tuple[StockCount, int, int]]:
+    """Counts for one site, newest first, as (count, line_count, counted_count)."""
+    totals = (
+        select(
+            StockCountLine.stock_count_id.label("count_id"),
+            func.count(StockCountLine.id).label("line_count"),
+            func.count(StockCountLine.counted_qty).label("counted_count"),
+        )
+        .group_by(StockCountLine.stock_count_id)
+        .subquery()
+    )
+    q = (
+        select(StockCount, func.coalesce(totals.c.line_count, 0), func.coalesce(totals.c.counted_count, 0))
+        .outerjoin(totals, totals.c.count_id == StockCount.id)
+        .where(StockCount.org_unit_id == org_unit_id)
+    )
+    if status is not None:
+        q = q.where(StockCount.status == status)
+    q = q.order_by(StockCount.count_date.desc(), StockCount.created_at.desc(), StockCount.id.desc())
+    return [(count, int(lines), int(counted)) for count, lines, counted in db.execute(q).all()]
 
 
 def _get_count(db: Session, count_id: int) -> StockCount:
