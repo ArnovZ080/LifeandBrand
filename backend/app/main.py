@@ -9,6 +9,7 @@ from app.api.routes import (
     auth, org_units, operational_alerts,
     ingest, daily_pulse, cos, waste, stock_counts,
     requisitions, approval_rules, audit, forecasts, predictive_ordering,
+    par_levels, shopping_list,
 )
 from app.db.database import SessionLocal
 from app.services.am_tasks import seed_tasks
@@ -84,6 +85,10 @@ app.include_router(audit.router, prefix="/api/v1")
 # Sales forecasting and predictive ordering (Feature 4)
 app.include_router(forecasts.router, prefix="/api/v1")
 app.include_router(predictive_ordering.router, prefix="/api/v1")
+
+# Par levels and shopping list (per-venue rule-based reordering)
+app.include_router(par_levels.router, prefix="/api/v1")
+app.include_router(shopping_list.router, prefix="/api/v1")
 
 
 @app.get("/health")

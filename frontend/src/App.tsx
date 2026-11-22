@@ -12,6 +12,8 @@ import DailyPulse from "./pages/DailyPulse";
 import COSVariance from "./pages/COSVariance";
 import OpsVisitReport from "./pages/OpsVisitReport";
 import OneOnOne from "./pages/OneOnOne";
+import ParLevels from "./pages/ParLevels";
+import ShoppingList from "./pages/ShoppingList";
 import Login from "./pages/Login";
 import { useAuth, ROLES_WITH_MULTI_SITE } from "./contexts/AuthContext";
 import api from "./hooks/useApi";
@@ -23,6 +25,8 @@ const stockNavItems = [
   { to: "/alerts", label: "Freshness Alerts" },
   { to: "/suppliers", label: "Suppliers" },
   { to: "/purchase-orders", label: "Purchase Orders" },
+  { to: "/par-levels", label: "Par Levels" },
+  { to: "/shopping-list", label: "Shopping List" },
   { to: "/deliveries", label: "Deliveries (GRN)" },
   { to: "/invoice-ocr", label: "Invoice Capture" },
   { to: "/cos-variance", label: "COS & Variance" },
@@ -151,6 +155,8 @@ function AppLayout() {
           <Route path="/purchase-orders" element={<PurchaseOrders />} />
           <Route path="/deliveries" element={<Deliveries />} />
           <Route path="/invoice-ocr" element={<InvoiceOCR />} />
+          <Route path="/par-levels" element={<ParLevels />} />
+          <Route path="/shopping-list" element={<ShoppingList />} />
           <Route path="/am/operating-structure" element={<AMOperatingStructure />} />
           <Route path="/am/ops-visits" element={<OpsVisitReport />} />
           <Route path="/am/one-on-ones" element={<OneOnOne />} />

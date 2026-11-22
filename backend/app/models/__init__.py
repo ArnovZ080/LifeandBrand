@@ -35,6 +35,7 @@ from app.models.approval import (
 )
 from app.models.audit import AuditEvent, AuditLogImmutableError
 from app.models.forecast import ForecastRun, ForecastLine
+from app.models.par_level import ParLevel
 
 __all__ = [
     "OrgUnit", "OrgTier", "Location",
@@ -71,4 +72,5 @@ __all__ = [
     "ApprovalSubject", "ApprovalStatus", "DecisionOutcome",
     "AuditEvent", "AuditLogImmutableError",
     "ForecastRun", "ForecastLine",
+    "ParLevel",
 ]

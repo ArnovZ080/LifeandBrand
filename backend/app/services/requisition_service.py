@@ -206,6 +206,14 @@ def _unit_price(db: Session, org_unit_id: int, item_id: int, today: date) -> Dec
     raise ValueError(f"No price for item {label}: no catalogue price and no unit cost")
 
 
+def current_unit_price(db: Session, org_unit_id: int, item_id: int) -> Decimal | None:
+    """Price the submit step would use today, or None when there is no price at all."""
+    try:
+        return _unit_price(db, org_unit_id, item_id, date.today())
+    except ValueError:
+        return None
+
+
 def submit(
     db: Session, requisition: Requisition, today: date | None = None, actor: User | None = None,
 ) -> Requisition:
